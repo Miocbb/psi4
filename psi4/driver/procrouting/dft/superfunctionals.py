@@ -37,6 +37,9 @@ from psi4.driver.p4util.exceptions import ValidationError
 from . import dft_builder
 
 def build_superfunctional(name, restricted, npoints=None, deriv=1):
+
+    core.print_out(f'\nTEST: in build_superfunctional(), name={name}\n')
+
     if npoints is None:
         npoints = core.get_option("SCF", "DFT_BLOCK_MAX_POINTS")
 

@@ -43,6 +43,15 @@ namespace mcscf {
 
 enum ReferenceType { rhf, rohf, uhf, tcscf };
 
+/**
+ * ym:
+ * I guess this is the core class for SCF calculations.
+ * The question is how this class connected with a specific method (HF or DFT)?
+ * It looks like there is no inheritance between a class SCF and RHF/UHF class.
+ *
+ * After some testing, doing a HF calculations does not call
+ * `SCF.compute_energy()`. Strange.
+ */
 class SCF : public Wavefunction {
    public:
     explicit SCF(SharedWavefunction ref_wfn, Options& options_, std::shared_ptr<PSIO> psio);

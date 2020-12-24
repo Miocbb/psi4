@@ -36,6 +36,14 @@ namespace psi {
 namespace mcscf {
 
 double SCF::compute_energy() {
+    printf("TEST: calling SCF::compute_energy().\n");
+    /**
+     * ym:
+     * FILE pointer has a Printf member function?
+     * outfile is a global shared pointer defined as
+     * `std::shared_ptr<PsiOutStream> outfile` in `core.cc`;
+     * Converting shared_ptr to FILE* ?
+     */
     outfile->Printf("\n\n  Running an SCF calculation");
 
     startup();

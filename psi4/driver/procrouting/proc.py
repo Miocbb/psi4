@@ -26,6 +26,7 @@
 # @END LICENSE
 #
 
+# `proc.py` refers to procedures?
 """Module with functions that encode the sequence of PSI module
 calls for each of the *name* values of the energy(), optimize(),
 response(), and frequency() function. *name* can be assumed lowercase by here.
@@ -1135,6 +1136,7 @@ def build_disp_functor(name, restricted, **kwargs):
         modified_disp_params = None
 
     # Figure out functional
+    core.print_out(f'\nTEST: in build_disp_functor(), name={name}\n')
     superfunc, disp_type = dft.build_superfunctional(name, restricted)
 
     if disp_type:
@@ -1175,6 +1177,8 @@ def scf_wavefunction_factory(name, ref_wfn, reference, **kwargs):
     superfunc, _disp_functor = build_disp_functor(name, restricted=(reference in ["RKS", "RHF"]), **kwargs)
 
     # Build the wavefunction
+    # ym: `export_wavefunction.cc`.
+    # `class HF` is inherited from `class Wavefunction`.
     core.prepare_options_for_module("SCF")
     if reference in ["RHF", "RKS"]:
         wfn = core.RHF(ref_wfn, superfunc)
@@ -1470,6 +1474,7 @@ def scf_helper(name, post_scf=True, **kwargs):
         core.print_out("\n         ---------------------------------------------------------\n");
         core.print_out("         " + banner.center(58));
 
+    # what is scf_wfn?
     scf_wfn = scf_wavefunction_factory(name, base_wfn, core.get_option('SCF', 'REFERENCE'), **kwargs)
     core.set_legacy_wavefunction(scf_wfn)
 
@@ -1565,7 +1570,37 @@ def scf_helper(name, post_scf=True, **kwargs):
             basisset=scf_wfn.basisset()
         )
 
+    # This is the the entrance to real SCF cycles?
+    core.print_out('\nTEST: before scf_wfn.compute_energy().\n')
+    core.print_out(f'TEST: scf_wfn.__dict__:\n')
+    core.print_out(f'{str(scf_wfn.__dict__)}\n')
+    # help(scf_wfn)
+    # Do not understand the compuate_energy() for HF calculation, for example.
+    # The scf_wfn is inheriated from `class Wavefunction`. `compute_energy()`
+    # is defined as a virtual function in `class Wavefunction` and should
+    # be override for specific method.
+    # For example, the inheritance of RHF class is: RHF <- HF <- Wavefunction.
+    # However, there is no overriding of `compute_energy()`. Instead,
+    # I find a `class SCF` inherited from `class Wavefunction`, in which
+    # the `compute_energy()` is overrode. I guess `class SCF` is related
+    # to all the SCF calculations in HF or DFT method. So how `class SCF`
+    # and `class RHF`, for example, are connected. It looks like there
+    # is no inheritance between them.
+    #
+    # Ooh, this is so tricky!
+    # `scf_wfn.compute_energy()` is not the same as
+    # `core.Wavefunction.compute_energy`. It is overrode in the external
+    # python drive. See `scf_iterator.py`.
+    # Therefore, in psi.core, there is no any definiations for `compute_energy()`
+    # for any derived class from `class Wavefunction`. This logic is so
+    # misleading.
+    #
+    # The real function that calculates the total energy is
+    # `psi.core.compute_E`, which is binded with `class HF.compute_E()`.
+    # See function `scf_iterate()` in `scf_iterator.py`.
     e_scf = scf_wfn.compute_energy()
+    core.print_out(f'\nTEST: e_scf={e_scf}.\n')
+    core.print_out('\nTEST: end scf_wfn.compute_energy().\n')
     for obj in [core, scf_wfn]:
         for pv in ["SCF TOTAL ENERGY", "CURRENT ENERGY", "CURRENT REFERENCE ENERGY"]:
             obj.set_variable(pv, e_scf)
@@ -2285,6 +2320,9 @@ def run_scf(name, **kwargs):
     if not core.has_global_option_changed('SCF_TYPE'):
         core.set_global_option('SCF_TYPE', 'DF')
 
+    # entrance of setting DFT functional.
+    # qm calculations are donw in `scf_helper`.
+    # return a wavefunction.
     scf_wfn = scf_helper(name, post_scf=False, **kwargs)
     returnvalue = scf_wfn.energy()
 
@@ -4073,7 +4111,6 @@ def run_sapt(name, **kwargs):
     core.print_out('\n')
 
     # Compute dimer wavefunction
-    
     if (sapt_basis == 'dimer') and (ri == 'DF'):
         core.set_global_option('DF_INTS_IO', 'SAVE')
 
@@ -4088,7 +4125,6 @@ def run_sapt(name, **kwargs):
     if (sapt_basis == 'dimer') and (ri == 'DF'):
         core.set_global_option('DF_INTS_IO', 'LOAD')
 
-    
     # Compute Monomer A wavefunction
     if (sapt_basis == 'dimer') and (ri == 'DF'):
         core.IO.change_file_namespace(97, 'dimer', 'monomerA')
@@ -4097,7 +4133,7 @@ def run_sapt(name, **kwargs):
     core.print_out('\n')
     p4util.banner('Monomer A HF')
     core.print_out('\n')
-    
+
     core.timer_on("SAPT: Monomer A SCF")
     monomerA_wfn = scf_helper('RHF', molecule=monomerA, **kwargs)
     core.timer_off("SAPT: Monomer A SCF")

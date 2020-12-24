@@ -81,6 +81,16 @@ using namespace pybind11::literals;
 
 void export_wavefunction(py::module& m) {
     typedef void (Wavefunction::*take_sharedwfn)(SharedWavefunction);
+    /**
+     * See following points for pybind11.
+     * 1. bind customized data type between c++ and python.
+     * 2. how to achieve the relation of inheritance in pybind11.
+     * 3. introduce danamic atrributes for c++, which is just like in python.
+     *
+     *
+     * py::class_.def() member function returns `this` pointer. So
+     * that we can bind new c++ class memember function in chain.
+     */
     py::class_<Wavefunction, std::shared_ptr<Wavefunction>>(m, "Wavefunction", "docstring", py::dynamic_attr())
         .def(py::init<std::shared_ptr<Molecule>, std::shared_ptr<BasisSet>, Options&>())
         .def(py::init<std::shared_ptr<Molecule>, std::shared_ptr<BasisSet>>())

@@ -116,6 +116,7 @@ _dispersion_aliases = qcng.programs.empirical_dispersion_resources.get_dispersio
 functionals = {}
 dashcoeff_supplement = collections.defaultdict(lambda: collections.defaultdict(dict))
 
+# Make the complete table of DFT functionals in the following code block.
 for functional_name in dict_functionals:
     functional_aliases = get_functional_aliases(dict_functionals[functional_name])
 
@@ -163,6 +164,10 @@ for functional_name in dict_functionals:
                     for alias in functional_aliases:
                         alias += "-" + nominal_dispersion_level.lower()
                         functionals[alias] = func
+
+core.print_out("\nTEST: the complete list of DFT functionals:\n")
+core.print_out(str(functionals))
+core.print_out('\n')
 
 
 def check_consistency(func_dictionary):

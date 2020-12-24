@@ -123,7 +123,7 @@ def initialize_jk(self, memory, jk=None):
     jk.set_omega(functional.x_omega())
 
     jk.set_omega_alpha(functional.x_alpha())
-    jk.set_omega_beta(functional.x_beta())   
+    jk.set_omega_beta(functional.x_beta())
 
     jk.initialize()
     jk.print_header()
@@ -219,7 +219,7 @@ def scf_initialize(self):
         self.guess()
         core.timer_off("HF: Guess")
         # Print out initial docc/socc/etc data
-        if self.get_print():                    
+        if self.get_print():
             lack_occupancy = core.get_local_option('SCF', 'GUESS') in ['SAD']
             if core.get_global_option('GUESS') in ['SAD']:
                 lack_occupancy = core.get_local_option('SCF', 'GUESS') in ['AUTO']
@@ -692,7 +692,7 @@ def scf_print_energies(self):
     if hasattr(self.molecule(), 'EFP'):
         core.print_out("    EFP Energy =                      {:24.16f}\n".format(eefp))
     core.print_out("    Total Energy =                    {:24.16f}\n".format(total_energy))
-    
+
     if core.get_option('SCF', 'PE'):
         core.print_out(self.pe_state.cppe_state.summary_string)
 
@@ -762,6 +762,8 @@ def scf_print_preiterations(self,small=False):
 core.HF.initialize = scf_initialize
 core.HF.initialize_jk = initialize_jk
 core.HF.iterations = scf_iterate
+# ym:
+# This redifines the member function `core.HF.compute_energy`.
 core.HF.compute_energy = scf_compute_energy
 core.HF.finalize_energy = scf_finalize_energy
 core.HF.print_energies = scf_print_energies
