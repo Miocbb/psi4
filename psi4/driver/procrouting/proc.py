@@ -2321,9 +2321,11 @@ def run_scf(name, **kwargs):
         core.set_global_option('SCF_TYPE', 'DF')
 
     # entrance of setting DFT functional.
-    # qm calculations are donw in `scf_helper`.
+    # qm calculations are done in `scf_helper`.
     # return a wavefunction.
     scf_wfn = scf_helper(name, post_scf=False, **kwargs)
+    # `scf_wfn.energy()` is just a convenient function to return the
+    # total energy.
     returnvalue = scf_wfn.energy()
 
     ssuper = scf_wfn.functional()

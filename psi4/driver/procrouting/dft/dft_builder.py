@@ -165,9 +165,9 @@ for functional_name in dict_functionals:
                         alias += "-" + nominal_dispersion_level.lower()
                         functionals[alias] = func
 
-core.print_out("\nTEST: the complete list of DFT functionals:\n")
-core.print_out(str(functionals))
-core.print_out('\n')
+#core.print_out("\nTEST: the complete list of DFT functionals:\n")
+#core.print_out(str(functionals))
+#core.print_out('\n')
 
 
 def check_consistency(func_dictionary):

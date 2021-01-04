@@ -45,6 +45,8 @@ namespace psi {
 plugin_info plugin_load(std::string &plugin_pathname) {
     plugin_info info;
 
+    psi::outfile->Printf("\nTEST: load plugin here with HAVE_DLFCN_H !\n");
+
     info.plugin_handle = dlopen(plugin_pathname.c_str(), RTLD_LAZY);
     if (info.plugin_handle == nullptr) {
         std::string msg = "load_plugin: Cannot open library: ";
@@ -52,6 +54,10 @@ plugin_info plugin_load(std::string &plugin_pathname) {
         throw PSIEXCEPTION(msg);
     }
 
+    // ym:
+    // Dynamically link the function to set options for the plugin.
+    // The function's name has to be `read_options` in the plugin,
+    // because it is hardly coded here.
     info.read_options = (read_options_t)dlsym(info.plugin_handle, "read_options");
     const char *dlsym_error2 = dlerror();
     if (dlsym_error2) {
@@ -68,6 +74,10 @@ plugin_info plugin_load(std::string &plugin_pathname) {
     // Replace all '-' with '_'
     std::transform(info.name.begin(), info.name.end(), info.name.begin(), [](char c) { return c == '-' ? '_' : c; });
 
+    // ym:
+    // Dynamically link the main function to do the calculation for the plugin.
+    // The function's name has to be the same as the plugin'name in the plugin,
+    // because it is hardly coded here.
     info.plugin = (plugin_t)dlsym(info.plugin_handle, info.name.c_str());
     const char *dlsym_error3 = dlerror();
     if (dlsym_error3) {
@@ -92,6 +102,7 @@ plugin_info plugin_load(std::string &plugin_pathname) {
 #else
 
 plugin_info plugin_load(std::string& plugin_path) {
+    psi::outfile->Printf("\nTEST: load plugin here without HAVE_DLFCN_H !\n");
     throw PSIEXCEPTION("Plugins are not supported on your platform.\n");
     return plugin_info();
 }

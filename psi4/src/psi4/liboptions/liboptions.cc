@@ -515,6 +515,16 @@ void Options::set_current_module(const std::string s) {
 
 void Options::to_upper(std::string& str) const { std::transform(str.begin(), str.end(), str.begin(), ::toupper); }
 
+/**
+ *  ym:
+ * This only validates the key value of the option, the validation of value
+ * is not performed.
+ *
+ * Actually, I found that only the string typed data, i.e.,
+ * `class StringDataType` or `class IStringDataType` has a member `choices_`
+ * that specifies the valid values. Int or double typed Data has no
+ * such member.
+ */
 void Options::validate_options() {
     std::map<std::string, Data>::const_iterator iter = locals_[current_module_].begin();
     std::map<std::string, Data>::const_iterator stop = locals_[current_module_].end();

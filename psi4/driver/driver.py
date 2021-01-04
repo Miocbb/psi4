@@ -498,6 +498,17 @@ def energy(name, **kwargs):
     >>> energy("MP2/aug-cc-pv([d,t]+d)z + d:ccsd(t)/cc-pvdz", corl_scheme=myxtplfn_2)
 
     """
+    core.print_out(f"TEST: energy(): name={name}\n")
+    value_t = core.get_option("SCF", "DFT_LOSC_TEST")
+    if value_t == "DO_LOSC":
+        core.print_out(f"\nTEST: local option found: {value_t}.\n")
+    else:
+        core.print_out("\nTEST: local option not found.\n")
+    value_t = core.get_global_option("DFT_LOSC_TEST")
+    if value_t == "DO_LOSC":
+        core.print_out(f"\nTEST: global option found: {value_t}.\n")
+    else:
+        core.print_out("\nTEST: global option not found.\n")
     kwargs = p4util.kwargs_lower(kwargs)
 
     # Bounce to MDI if mdi kwarg
@@ -573,6 +584,7 @@ def energy(name, **kwargs):
                 targetfile = filepath + prefix + '.' + pid + '.' + namespace + '.' + str(filenum)
             shutil.copy(item, targetfile)
 
+    core.print_out(f"TEST: energy(): lowername={lowername} before procedures\n")
     wfn = procedures['energy'][lowername](lowername, molecule=molecule, **kwargs)
 
     for postcallback in hooks['energy']['post']:
@@ -613,7 +625,7 @@ def gradient(name, **kwargs):
 
     """
     kwargs = p4util.kwargs_lower(kwargs)
-    
+
     core.print_out("\nScratch directory: %s\n" % core.IOManager.shared_object().get_default_path())
 
     # Figure out what kind of gradient this is
@@ -897,22 +909,22 @@ def optimize_geometric(name, **kwargs):
 
     class Psi4NativeEngine(geometric.engine.Engine):
         """
-        Internally run an energy and gradient calculation for geometric 
+        Internally run an energy and gradient calculation for geometric
         """
         def __init__(self, p4_name, p4_mol, p4_return_wfn, **p4_kwargs):
-    
+
             self.p4_name = p4_name
             self.p4_mol = p4_mol
             self.p4_return_wfn = p4_return_wfn
             self.p4_kwargs = p4_kwargs
-    
+
             molecule = geometric.molecule.Molecule()
             molecule.elem = [p4_mol.symbol(i) for i in range(p4_mol.natom())]
-            molecule.xyzs = [p4_mol.geometry().np * qcel.constants.bohr2angstroms] 
+            molecule.xyzs = [p4_mol.geometry().np * qcel.constants.bohr2angstroms]
             molecule.build_bonds()
-                                 
+
             super(Psi4NativeEngine, self).__init__(molecule)
-    
+
         def calc(self, coords, dirname):
             self.p4_mol.set_geometry(core.Matrix.from_array(coords.reshape(-1,3)))
             self.p4_mol.update_geometry()
@@ -945,12 +957,12 @@ def optimize_geometric(name, **kwargs):
 
     core.print_out('\n')
     core.print_out("\n  ==> GeomeTRIC Optimizer <==                                                                   ~\n")
-                                 
+
     # Default to Psi4 maxiter unless overridden
     if 'maxiter' not in optimizer_keywords:
         optimizer_keywords['maxiter'] = core.get_global_option('GEOM_MAXITER')
 
-    # Default to Psi4 geometry convergence criteria unless overridden 
+    # Default to Psi4 geometry convergence criteria unless overridden
     if 'convergence_set' not in optimizer_keywords:
         optimizer_keywords['convergence_set'] = core.get_global_option('G_CONVERGENCE')
 
@@ -961,7 +973,7 @@ def optimize_geometric(name, **kwargs):
 
     engine = Psi4NativeEngine(name, molecule, return_wfn, **kwargs)
     M = engine.M
-    
+
     # Handle constraints
     constraints_dict = {k.lower(): v for k, v in optimizer_keywords.get("constraints", {}).items()}
     constraints_string = geometric.run_json.make_constraints_string(constraints_dict)
@@ -970,7 +982,7 @@ def optimize_geometric(name, **kwargs):
         if 'scan' in constraints_dict:
             raise ValueError("Coordinate scans are not yet available through the Psi4-GeomeTRIC interface")
         Cons, CVals = geometric.optimize.ParseConstraints(M, constraints_string)
-    
+
     # Set up the internal coordinate system
     coordsys = optimizer_keywords.get('coordsys', 'tric')
     CoordSysDict = {
@@ -980,7 +992,7 @@ def optimize_geometric(name, **kwargs):
         'hdlc': (geometric.internal.DelocalizedInternalCoordinates, False, True),
         'tric': (geometric.internal.DelocalizedInternalCoordinates, False, False)
     }
-    
+
     # Build internal coordinates
     CoordClass, connect, addcart = CoordSysDict[coordsys.lower()]
     IC = CoordClass(
@@ -990,14 +1002,14 @@ def optimize_geometric(name, **kwargs):
         addcart=addcart,
         constraints=Cons,
         cvals=CVals[0] if CVals is not None else None)
-    
+
     # Get initial coordinates in bohr
     coords = M.xyzs[0].flatten() / qcel.constants.bohr2angstroms
 
     # Setup an optimizer object
     params = geometric.optimize.OptParams(**optimizer_keywords)
     optimizer = geometric.optimize.Optimizer(coords, M, IC, engine, None, params)
-    
+
     # TODO: print constraints
     # IC.printConstraints(coords, thre=-1)
     optimizer.calcEnergyForce()
@@ -1472,7 +1484,7 @@ def hessian(name, **kwargs):
         lowername = name.lower()
 
     _filter_renamed_methods("frequency", lowername)
-    
+
     return_wfn = kwargs.pop('return_wfn', False)
     core.clean_variables()
     dertype = 2
@@ -1716,7 +1728,7 @@ def frequency(name, **kwargs):
 
     """
     kwargs = p4util.kwargs_lower(kwargs)
-    
+
     return_wfn = kwargs.pop('return_wfn', False)
 
     # Make sure the molecule the user provided is the active one

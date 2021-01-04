@@ -38,6 +38,9 @@ from psi4.driver.procrouting.dft import functionals, build_superfunctional_from_
 # never import wrappers or aliases into this file
 
 # Procedure lookup tables
+# ym:
+# This is just the initialization of procedure table, not the final one.
+# The key in 'energy' table will involves all the DFAs at last.
 procedures = {
     'energy': {
         'hf'            : proc.run_scf,

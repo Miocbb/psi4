@@ -45,6 +45,10 @@ namespace psi {
  * This is called immediately before a module is run.  Any options
  * expected by that module must be added here
  *
+ * ym:
+ * This is the default setting of all the options to do a calculation of
+ * a certain module.
+ *
  * @param name    - the name of the module.
  * @param options - the liboptions module used in the computations.
  * @param suppress_printing - boolean to specify whether to print to output file [false]
@@ -264,7 +268,7 @@ int read_options(const std::string &name, Options &options, bool suppress_printi
     /*- MBIS Number of Spherical Points -*/
     options.add_int("MBIS_SPHERICAL_POINTS", 302);
     /*- Pruning scheme for MBIS Grid -*/
-    options.add_str("MBIS_PRUNING_SCHEME", "ROBUST", 
+    options.add_str("MBIS_PRUNING_SCHEME", "ROBUST",
                     "ROBUST TREUTLER NONE FLAT P_GAUSSIAN D_GAUSSIAN P_SLATER D_SLATER LOG_GAUSSIAN LOG_SLATER NONE");
 
     /*- PCM boolean for pcmsolver module -*/
@@ -282,6 +286,9 @@ int read_options(const std::string &name, Options &options, bool suppress_printi
 
     /*- PE boolean for polarizable embedding module -*/
     options.add_bool("PE", false);
+    // ym:
+    // The name of the option's setting is `PE` or
+    // the flog of setting global options is True (from `options.read_globals()`).
     if (name == "PE" || options.read_globals()) {
         /*- MODULEDESCRIPTION Performs polarizable embedding model (PE) computations. -*/
 
@@ -1658,6 +1665,9 @@ int read_options(const std::string &name, Options &options, bool suppress_printi
               (itself the default for |globals__scf_type| DF),
             False otherwise as not yet implemented. -*/
         options.add_bool("WCOMBINE", false);
+
+        /*- Testing LOSC setting options. -*/
+        options.add_str("DFT_LOSC_TEST", "DO_LOSC", "DO_LOSC NOT_DO_LOST");
     }
     if (name == "CPHF" || options.read_globals()) {
         /*- The amount of information printed

@@ -287,6 +287,9 @@ def scf_iterate(self, e_conv=None, d_conv=None):
         self.clear_external_potentials()
 
         core.timer_on("HF: Form G")
+        # ym:
+        # This is the entrance to build the G matrix in SCF cycle.
+        # So the contribution of LOSC to Fock matrix should be added here.
         self.form_G()
         core.timer_off("HF: Form G")
 
@@ -409,6 +412,8 @@ def scf_iterate(self, e_conv=None, d_conv=None):
                     self.Fb().print_out()
 
                 # frac, MOM invoked here from Wfn::HF::find_occupation
+                # ym:
+                # This is the diagonalization of Fock matrix.
                 core.timer_on("HF: Form C")
                 self.form_C()
                 core.timer_off("HF: Form C")
@@ -458,6 +463,8 @@ def scf_iterate(self, e_conv=None, d_conv=None):
             continue
 
         # Call any postiteration callbacks
+        # ym:
+        # This is the convergence checking to exit the SCF procedure.
         if not ((self.iteration_ == 0) and self.sad_) and _converged(Ediff, Dnorm, e_conv=e_conv, d_conv=d_conv):
             break
         if self.iteration_ >= core.get_option('SCF', 'MAXITER'):
@@ -764,6 +771,7 @@ core.HF.initialize_jk = initialize_jk
 core.HF.iterations = scf_iterate
 # ym:
 # This redifines the member function `core.HF.compute_energy`.
+# All the DFT calculation is inherited from `core.HF` class.
 core.HF.compute_energy = scf_compute_energy
 core.HF.finalize_energy = scf_finalize_energy
 core.HF.print_energies = scf_print_energies

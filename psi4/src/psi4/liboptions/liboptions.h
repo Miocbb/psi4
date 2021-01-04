@@ -433,6 +433,13 @@ class PSI_API Options {
     bool exists_in_global(std::string key) const;
     bool exists(std::string key) const;
 
+    /**
+     * retrieve the data by the key.
+     *
+     * @return the returned value is an abstract data type `class Data`.
+     * To get the corresponding type of the data, call `Data.to_string()`,
+     * `Data.to_int()` and `Data.to_double`.
+     */
     Data& get(std::string key);
 
     Data& get(std::map<std::string, Data>& m, std::string& key);

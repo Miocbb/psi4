@@ -94,8 +94,9 @@ SharedWavefunction py_psi_plugin(std::string fullpathname, SharedWavefunction re
     plugin_info &tmpinfo = plugins[uc];
 
     outfile->Printf("\nReading options from the %s block\n", tmpinfo.name.c_str());
+    // This is the entrance of reading options for all the default psi4 modules.
     py_psi_prepare_options_for_module(tmpinfo.name);
-
+    // This is the entrance of reading options specified in the plugin.
     tmpinfo.read_options(tmpinfo.name, Process::environment.options);
 
     plugin_info &info = plugins[uc];
