@@ -1172,14 +1172,25 @@ def scf_wavefunction_factory(name, ref_wfn, reference, **kwargs):
     provided information, sets relevant auxiliary basis sets on it,
     and prepares any empirical dispersion.
 
+    ym:
+    This is the function that generates the wavefunction object for
+    SCF module. The returned wavefunction object always falls in
+    [RHF, ROHF, UHF, CUHF]. If I decide to create a new wavefunction
+    class for losc, such as `class RLOSC: public RHF`, I need to
+    modify this function. Keep this in mind.
+
     """
     # Figure out functional and dispersion
     superfunc, _disp_functor = build_disp_functor(name, restricted=(reference in ["RKS", "RHF"]), **kwargs)
 
+    core.prepare_options_for_module("SCF")
+
     # Build the wavefunction
     # ym: `export_wavefunction.cc`.
     # `class HF` is inherited from `class Wavefunction`.
-    core.prepare_options_for_module("SCF")
+    # Question:
+    # So RHF and RKS actually mean the same thing: only the restricted
+    # calculation?
     if reference in ["RHF", "RKS"]:
         wfn = core.RHF(ref_wfn, superfunc)
     elif reference == "ROHF":
@@ -1244,6 +1255,17 @@ def scf_helper(name, post_scf=True, **kwargs):
     up or just run SCF with a standard guess. This preserves
     previous SCF options set by other procedures (e.g., SAPT
     output file types for SCF).
+
+    ym:
+    here, "cast up" may means running SCF with a small basis set then
+    with the real specified (usually bigger) basis set.
+    use command `set basis_guess small_basis_xxx` in psithon mode.
+
+    Actually, I don't know how does this work. The basis dimension is
+    different in the two following up calculations. How to cast up?
+    --
+    Okay, casting up is done by projection of basis set, from the
+    guessed one to the really used one.
 
     """
 
@@ -1314,6 +1336,10 @@ def scf_helper(name, post_scf=True, **kwargs):
     bannername = name
 
     # Did we pass in a DFT functional?
+    # ym:
+    # It looks like the code blow is checking if it is doing DFT with an SCF
+    # calculation. Why not just verify `dft_func` and `post_scf`? Following
+    # code based on `name` is redundant and confusing.
     dft_func = kwargs.pop('dft_functional', None)
     if dft_func is not None:
         if name.lower() != "scf":
@@ -1349,7 +1375,7 @@ def scf_helper(name, post_scf=True, **kwargs):
             if guessbasis is None:
                 guessbasis = '3-21G'  # guess of last resort
         else:
-            guessbasis = cast
+            guessbasis = cast # this statement will never execute.
         core.set_global_option('BASIS', guessbasis)
 
         castdf = 'DF' in core.get_global_option('SCF_TYPE')
@@ -1469,6 +1495,8 @@ def scf_helper(name, post_scf=True, **kwargs):
         core.print_out('\n')
 
     # the SECOND scf call
+    # ym:
+    # This is the starting point of SCF call if casting up is not set.
     base_wfn = core.Wavefunction.build(scf_molecule, core.get_global_option('BASIS'))
     if banner:
         core.print_out("\n         ---------------------------------------------------------\n");
@@ -2330,6 +2358,7 @@ def run_scf(name, **kwargs):
 
     ssuper = scf_wfn.functional()
 
+    # double hybrid functional below.
     if ssuper.is_c_hybrid():
         core.tstart()
         aux_basis = core.BasisSet.build(scf_wfn.molecule(), "DF_BASIS_MP2",

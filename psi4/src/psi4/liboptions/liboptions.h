@@ -375,6 +375,10 @@ class PSI_API Options {
     typedef std::map<std::string, Data>::iterator iterator;
     typedef std::map<std::string, Data>::const_iterator const_iterator;
     typedef std::map<std::string, std::map<std::string, Data> >::const_iterator const_mod_iterator;
+    typedef const std::map<std::string, Data> const_keyval_map;
+
+    std::string key_value_to_str(const_keyval_map &keyval,
+        bool changed_only = false) const;
 
    public:
     Options();
@@ -467,11 +471,12 @@ class PSI_API Options {
 
     Data& operator[](std::string key);
 
-    std::string to_string() const;
+    std::string to_string(std::string name = "", bool changed_only = false) const;
     std::string globals_to_string() const;
 
-    void print();
+    void print(std::string name = "", bool changed_only = false);
     void print_globals();
+    void print_all_local_options( bool changed_only = false);
     std::vector<std::string> list_globals();
 };
 }  // namespace psi

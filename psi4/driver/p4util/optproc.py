@@ -129,6 +129,7 @@ class OptionsState(object):
             raise ValidationError(
                 'Malformed options state, duplicate key adds of "{}". This should not happen, please raise a issue on github.com/psi4/psi4'.format(key))
         else:
+            # `OptionState` vs `OptionsState`, the names are so fucked!
             self.data[key] = OptionState(*key)
 
     def __str__(self):

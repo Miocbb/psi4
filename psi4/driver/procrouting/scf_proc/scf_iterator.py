@@ -770,8 +770,12 @@ core.HF.initialize = scf_initialize
 core.HF.initialize_jk = initialize_jk
 core.HF.iterations = scf_iterate
 # ym:
-# This redifines the member function `core.HF.compute_energy`.
-# All the DFT calculation is inherited from `core.HF` class.
+# All the calsses derived from `class HF` do not override
+# `HF.compute_energy()`. So they will use the base method
+# `HF.compute_energy()`.
+# Folloing code redifines the member function `core.HF.compute_energy`
+# to avoid throwing exceptions when `compute_energy()` is used
+# in DFT calculations.
 core.HF.compute_energy = scf_compute_energy
 core.HF.finalize_energy = scf_finalize_energy
 core.HF.print_energies = scf_print_energies

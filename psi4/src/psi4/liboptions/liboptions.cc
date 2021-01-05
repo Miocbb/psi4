@@ -539,6 +539,17 @@ void Options::validate_options() {
     all_local_options_.clear();
 }
 
+/**
+ * Add a key/data pair into options.
+ *
+ * @note:
+ * 1. Adding the pair into global or local options is determined by the
+ * `options.edit_globals_` flag.
+ * 2. This function will regiester the key/value pair into
+ * `options.all_local_options_` that is used in validation.
+ * 3. If the key already exists, this function keeps the original value
+ * and maks no modification.
+ */
 void Options::add(std::string key, DataType* data) {
     to_upper(key);
 

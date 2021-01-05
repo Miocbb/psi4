@@ -499,16 +499,6 @@ def energy(name, **kwargs):
 
     """
     core.print_out(f"TEST: energy(): name={name}\n")
-    value_t = core.get_option("SCF", "DFT_LOSC_TEST")
-    if value_t == "DO_LOSC":
-        core.print_out(f"\nTEST: local option found: {value_t}.\n")
-    else:
-        core.print_out("\nTEST: local option not found.\n")
-    value_t = core.get_global_option("DFT_LOSC_TEST")
-    if value_t == "DO_LOSC":
-        core.print_out(f"\nTEST: global option found: {value_t}.\n")
-    else:
-        core.print_out("\nTEST: global option not found.\n")
     kwargs = p4util.kwargs_lower(kwargs)
 
     # Bounce to MDI if mdi kwarg

@@ -75,6 +75,12 @@ extern bool brianEnableDFT;
 namespace psi {
 namespace scf {
 
+// ym:
+// Question:
+// For now, I still do not understand why does the constructor of
+// `class Wavefunction` or its derived class need a reference wavefunction?
+// What are the advantages by doing so?
+
 RHF::RHF(SharedWavefunction ref_wfn, std::shared_ptr<SuperFunctional> func)
     : HF(ref_wfn, func, Process::environment.options, PSIO::shared_object()) {
     common_init();
@@ -177,9 +183,28 @@ void RHF::form_V() {
     // const std::vector<SharedMatrix> & V = potential_->V();
     // Va_ = V[0];
     potential_->set_D({D_});
+    // ym:
+    // here, `potential_` is a type of `psi4::VBase`, in which
+    // `psi4::VBase.compute_V` will throw exceptions.
+    // `psi4::VBase` is inherited as `psi4::RV` for RKS and `psi4::UV` for UKS.
+    // Therefore, `potential_` will call the right overrode `compute_V()`.
+    // The initialization of `share_ptr<psi4::VBase> potential_`
+    // is done in `class HF` constructor.
     potential_->compute_V({Va_});
     Vb_ = Va_;
 }
+
+/**
+ * G = J + K + wK + Vxc + V_losc
+ * J: Coulomb
+ * K: HF exact exchange
+ * wK: long-range partitioned HF exact exchange
+ * Vxc: DFA exchange correlation potential.
+ * V_losc: LOSC effective potential. Add this in the future.
+ *
+ * V = Vxc + V_losc: for LOSC-DFA
+ * V = Vxc: for just DFA.
+ */
 void RHF::form_G() {
     if (functional_->needs_xc()) {
         form_V();

@@ -52,14 +52,12 @@ PRAGMA_WARNING_POP
 
 namespace psi {
 
-std::string Options::to_string() const {
+std::string Options::key_value_to_str(const_keyval_map &keyvals, bool changed_only) const
+{
     std::stringstream str;
     int linewidth = 0;
     int largest_key = 0, largest_value = 7;  // 7 for '(empty)'
 
-    std::map<std::string, std::map<std::string, Data> >::const_iterator localmap = locals_.find(current_module_);
-    if (localmap == locals_.end()) return str.str();  // Nothing to print
-    const std::map<std::string, Data> &keyvals = localmap->second;
     for (const_iterator pos = keyvals.begin(); pos != keyvals.end(); ++pos) {
         pos->first.size() > largest_key ? largest_key = pos->first.size() : 0;  // lgtm [cpp/useless-expression]
         pos->second.to_string().size() > largest_value ? largest_value = pos->second.to_string().size() : 0;  // lgtm [cpp/useless-expression]
@@ -76,11 +74,18 @@ std::string Options::to_string() const {
             value = local_iter->second.to_string();
             option_specified = true;
         } else if (global_iter != globals_.end()){ // make sure name is contained in globals_
-            if (global_iter->second.has_changed()) {
-                // Global option was set, get that
-                value = global_iter->second.to_string();
+            // Following if condition is not complete.
+            // Make the default global value printed as string "(empty)".
+            //if (global_iter->second.has_changed()) {
+            //    // Global option was set, get that
+            //    value = global_iter->second.to_string();
+            //    option_specified = true;
+            //}
+
+            // Global option was set, get that
+            value = global_iter->second.to_string();
+            if (global_iter->second.has_changed())
                 option_specified = true;
-            }
         } else {
             // Just use the default local value
             value = local_iter->second.to_string();
@@ -89,6 +94,9 @@ std::string Options::to_string() const {
         if (value.length() == 0) {
             value = "(empty)";
         }
+        // if only print changed options, skip the default options.
+        if (changed_only && !option_specified)
+            continue;
         line << "  " << std::left << std::setw(largest_key) << local_iter->first << " => " << std::setw(largest_value)
              << value;
         if (option_specified)
@@ -108,9 +116,33 @@ std::string Options::to_string() const {
     return str.str();
 }
 
-void Options::print() {
-    std::string list = to_string();
-    outfile->Printf("\n\n  Module %s Options:", current_module_.c_str());
+static std::string upper_case(const std::string &str) {
+    std::string t = str;
+    std::transform(t.begin(), t.end(), t.begin(), ::toupper);
+    return t;
+}
+
+std::string Options::to_string(std::string name, bool changed_only) const {
+    name = upper_case(name);
+    if (name.empty()) name = current_module_;
+
+    std::map<std::string, std::map<std::string, Data> >::const_iterator localmap = locals_.find(name);
+    if (localmap == locals_.end()) return std::string("");  // Nothing to print
+    const std::map<std::string, Data> &keyvals = localmap->second;
+    return key_value_to_str(keyvals, changed_only);
+}
+
+void Options::print(std::string name, bool changed_only) {
+    name = upper_case(name);
+    std::string list = to_string(name, changed_only);
+    outfile->Printf("\n\n  Module %s Options:", name.c_str());
+    outfile->Printf("\n  ----------------------------------------------------------------------------\n");
+    outfile->Printf("%s\n", list.c_str());
+}
+
+void Options::print_all_local_options(bool changed_only) {
+    std::string list = key_value_to_str(all_local_options_, changed_only);
+    outfile->Printf("\n\n  All local Options in Option.all_local_options_:");
     outfile->Printf("\n  ----------------------------------------------------------------------------\n");
     outfile->Printf("%s\n", list.c_str());
 }

@@ -294,6 +294,21 @@ void py_be_quiet() {
 
 std::string py_get_outfile_name() { return outfile_name; }
 
+/**
+ * Setting the default options for the running module.
+ *
+ * @param name: string, the name of the running module.
+ *
+ * @note
+ * 1. This is the initialization of options for the running module with
+ * all the default settings. If an options is set by the user
+ * intentionally, this function will NOT overwright the options.
+ *
+ * 2. Along the initialization of options, this function also
+ * register all supported options' keys in a temporary variable
+ * `option.all_local_options_`.
+ * For now, I think such registration is redundant.
+ */
 void py_psi_prepare_options_for_module(std::string const& name) {
     // Tell the options object which module is about to run
     Process::environment.options.set_current_module(name);
@@ -538,7 +553,22 @@ char const* py_psi_git_version() {
 
 void py_psi_clean() { PSIOManager::shared_object()->psiclean(); }
 
-void py_psi_print_options() { Process::environment.options.print(); }
+void py_psi_print_options_states() {
+    Options& opts = Process::environment.options;
+    bool edit_global = opts.read_globals();
+    std::string current_module = opts.get_current_module();
+    outfile->Printf("\nThe flags of states in Options:\n");
+    outfile->Printf("Is global options editable?  %d\n", edit_global);
+    outfile->Printf("current module: %s\n", current_module.c_str());
+}
+void py_psi_print_options(std::string module="", bool changed_only = false)
+{
+    Process::environment.options.print(module, changed_only);
+}
+void py_psi_print_all_local_options(bool changed_only = false)
+{
+    Process::environment.options.print_all_local_options(changed_only);
+}
 
 void py_psi_print_global_options() { Process::environment.options.print_globals(); }
 
@@ -1147,6 +1177,7 @@ PYBIND11_MODULE(core, core) {
     //           set_local_option
     //)pbdoc");
 
+    // only initialize global options in `core.initialize()`.
     core.def("initialize", &psi4_python_module_initialize);
     core.def("finalize", &psi4_python_module_finalize);
 
@@ -1185,6 +1216,7 @@ PYBIND11_MODULE(core, core) {
     export_cubeprop(core);
 
     // Options
+    // initialize global and local options in the running module.
     core.def("prepare_options_for_module", py_psi_prepare_options_for_module,
              "Sets the options module up to return options pertaining to the named argument (e.g. SCF).");
     core.def("set_active_molecule", py_psi_set_active_molecule,
@@ -1217,8 +1249,15 @@ PYBIND11_MODULE(core, core) {
     core.def("get_num_threads", py_psi_get_n_threads,
              "Returns the number of threads to use in SMP parallel computations.");
     //    core.def("mol_from_file",&LibBabel::ParseFile,"Reads a molecule from another input file");
+    core.def("print_options_states", py_psi_print_options_states,
+             "Prints the all the flags in options");
     core.def("print_options", py_psi_print_options,
-             "Prints the currently set options (to the output file) for the current module.");
+             "Prints the currently set options (to the output file) for the current module.",
+             py::arg("module") = "",
+             py::arg("changed_only") = false);
+    core.def("print_all_local_options", py_psi_print_all_local_options,
+             "Prints the all the local options (to the output file)",
+             py::arg("changed_only") = false);
     core.def("print_global_options", py_psi_print_global_options,
              "Prints the currently set global (all modules) options to the output file.");
     core.def("print_out", py_psi_print_out, "Prints a string (using sprintf-like notation) to the output file.");
