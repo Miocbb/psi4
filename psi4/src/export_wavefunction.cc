@@ -59,6 +59,7 @@
 #include "psi4/libscf_solver/cuhf.h"
 #include "psi4/libfunctional/superfunctional.h"
 #include "psi4/libfock/v.h"
+#include "psi4/losc/losc.h"
 
 #include "psi4/dfep2/dfep2.h"
 
@@ -327,6 +328,14 @@ void export_wavefunction(py::module& m) {
         .def("frac_renormalize", &scf::HF::frac_renormalize, "docstring")
         .def("compute_spin_contamination", &scf::HF::compute_spin_contamination, "docstring")
         .def("semicanonicalize", &scf::HF::semicanonicalize, "Semicanonicalizes the orbitals for ROHF.");
+
+    // LOSC wavefunctions
+    py::class_<losc::LOSC, std::shared_ptr<losc::LOSC>, scf::HF>(m, "LOSC", "LOSC class")
+        .def(py::init<std::shared_ptr<Wavefunction>, std::shared_ptr<SuperFunctional>>())
+        .def("c1_deep_copy", &losc::LOSC::c1_deep_copy,
+             "Returns a new wavefunction with internal data converted to C_1 symmetry, using pre-c1-constructed "
+             "BasisSet *basis*",
+             "basis"_a);
 
     /// HF Functions
     py::class_<scf::RHF, std::shared_ptr<scf::RHF>, scf::HF>(m, "RHF", "docstring")

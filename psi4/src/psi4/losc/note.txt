@@ -1,0 +1,39 @@
+1. import errors:
+I thought about making the implementation of LOSC to be
+independent of psi4 source code to avoid the time-consuming
+rebuilding process. The idea is to implement losc as a python
+c/c++ extension, e.g. losc.so, which is coded with
+c/c++ and driven by python with pybind11. losc.so will be something
+similar to core.so in psi4. losc.so will be dynamically linked
+with core.so to use existing functions in psi4 to build
+the losc functions. Then losc.so will be binded with pybind11
+to wrap a python module. With `import losc` in psi4 python-side
+code, now we can integrate the losc calculation into psi4
+with ONLY the modification of python-side code in psi4.
+
+However, the above idea looks like can not be done yet. The
+problem is the linking of losc.so with core.so. The
+compilation and linking of losc.so is okay without error throwing.
+However, when `import losc`, the python import will throw
+error, saying that some undefined symbols which are definitely
+defined in the core.so (I check with `nm` for core.so).
+This is a very strange behavior. I struggled a long time.
+However, I still find the reason. So not to proceed the implementation,
+I will directly implement losc in the psi4 source code.
+If we want to separate losc code out of psi4, let's do it later.
+
+Now, I think I found the reason for the issue mentioned above.
+In psi4, there are libraries and modules (both are compiled into
+static libraries actually). The psi4 core is compiled as a dynamic
+library from the source files "export_xxx.cc" only. Then
+psi4 core is linked PRIVATELY with all the libraries and modules.
+Note here, the private linking! So If we only link psi4.core.so
+in our losc project, the symbols defined in psi4 modules and libraries
+are not linked. Therefore, we see import errors with undefined
+symbols.
+
+
+2. Hard lesson of using pybind11.
+Make sure all the functions declared in header files have their
+definitions in cpp files. Missing any one will cause undefined symbols
+error in the importing psi4.core.so in python.

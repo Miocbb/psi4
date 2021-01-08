@@ -45,6 +45,7 @@ foreach(dir_name
   psimrcc
   sapt
   scfgrad
+  losc
   )
   add_subdirectory(${dir_name})
 endforeach ()

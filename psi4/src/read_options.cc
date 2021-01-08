@@ -37,6 +37,8 @@
 #include "psi4/liboptions/liboptions.h"
 #include "psi4/libpsi4util/PsiOutStream.h"
 
+#include "psi4/losc/option_key.h"
+
 // clang-format off
 
 namespace psi {
@@ -264,7 +266,7 @@ int read_options(const std::string &name, Options &options, bool suppress_printi
     /*- MBIS Number of Spherical Points -*/
     options.add_int("MBIS_SPHERICAL_POINTS", 302);
     /*- Pruning scheme for MBIS Grid -*/
-    options.add_str("MBIS_PRUNING_SCHEME", "ROBUST", 
+    options.add_str("MBIS_PRUNING_SCHEME", "ROBUST",
                     "ROBUST TREUTLER NONE FLAT P_GAUSSIAN D_GAUSSIAN P_SLATER D_SLATER LOG_GAUSSIAN LOG_SLATER NONE");
 
     /*- PCM boolean for pcmsolver module -*/
@@ -1658,6 +1660,17 @@ int read_options(const std::string &name, Options &options, bool suppress_printi
               (itself the default for |globals__scf_type| DF),
             False otherwise as not yet implemented. -*/
         options.add_bool("WCOMBINE", false);
+
+        /*- The amount of information of LOSC printed to the output file -*/
+        options.add_int(losc::option_print_level, 1);
+        /*- How tightly to converge the localization cost function -*/
+        options.add_double(losc::option_localize_convergence, 1.0e-10);
+        /*- LOSC curvature_v1 parameter Cx. -*/
+        options.add_double(losc::option_curvature_v1_cx, 0.9306526);
+        /*- LOSC curvature_v1 parameter tau. -*/
+        options.add_double(losc::option_curvature_v1_tau, 1.2378);
+        /*- LOSC curvature_v2 parameter zeta. -*/
+        options.add_double(losc::option_curvature_v2_zeta, 8.0);
     }
     if (name == "CPHF" || options.read_globals()) {
         /*- The amount of information printed
