@@ -237,6 +237,8 @@ for key in functionals:
     ssuper = build_superfunctional_from_dictionary(functionals[key], 1, 1, True)[0]
 
     procedures['energy'][key] = proc.run_scf
+    losc_key = f'LOSC {key}'.lower()
+    procedures['energy'][losc_key] = proc.run_losc
 
     # Properties
     if not ssuper.is_c_hybrid():

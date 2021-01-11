@@ -1176,16 +1176,23 @@ def scf_wavefunction_factory(name, ref_wfn, reference, **kwargs):
 
     # Build the wavefunction
     core.prepare_options_for_module("SCF")
-    if reference in ["RHF", "RKS"]:
-        wfn = core.RHF(ref_wfn, superfunc)
-    elif reference == "ROHF":
-        wfn = core.ROHF(ref_wfn, superfunc)
-    elif reference in ["UHF", "UKS"]:
-        wfn = core.UHF(ref_wfn, superfunc)
-    elif reference == "CUHF":
-        wfn = core.CUHF(ref_wfn, superfunc)
+    losc_do = kwargs.get('losc_do', False)
+    if losc_do:
+        if reference in ["RHF", "RKS", "UHF", "UKS"]:
+            wfn = core.LOSC(ref_wfn, superfunc)
+        else:
+            raise ValidationError("SCF: Unknown reference (%s) when building the Wavefunction." % reference)
     else:
-        raise ValidationError("SCF: Unknown reference (%s) when building the Wavefunction." % reference)
+        if reference in ["RHF", "RKS"]:
+            wfn = core.RHF(ref_wfn, superfunc)
+        elif reference == "ROHF":
+            wfn = core.ROHF(ref_wfn, superfunc)
+        elif reference in ["UHF", "UKS"]:
+            wfn = core.UHF(ref_wfn, superfunc)
+        elif reference == "CUHF":
+            wfn = core.CUHF(ref_wfn, superfunc)
+        else:
+            raise ValidationError("SCF: Unknown reference (%s) when building the Wavefunction." % reference)
 
     if _disp_functor and _disp_functor.engine != 'nl':
         wfn._disp_functor = _disp_functor
@@ -2261,6 +2268,178 @@ def run_occ_gradient(name, **kwargs):
     optstash.restore()
     return occ_wfn
 
+def scf_property_helper(scf_wfn, **kwargs):
+    # We always would like to print a little property information
+    if kwargs.get('scf_do_properties', True):
+        oeprop = core.OEProp(scf_wfn)
+        oeprop.set_title("SCF")
+
+        # Figure our properties, if empty do dipole
+        props = [x.upper() for x in core.get_option("SCF", "SCF_PROPERTIES")]
+        if "DIPOLE" not in props:
+            props.append("DIPOLE")
+
+        proc_util.oeprop_validator(props)
+        for x in props:
+            oeprop.add(x)
+
+        # Compute properties
+        oeprop.compute()
+        for obj in [core, scf_wfn]:
+            with warnings.catch_warnings():
+                warnings.simplefilter("ignore")
+                # component qcvars can be retired at v1.5
+                for xyz in 'XYZ':
+                    obj.set_variable('CURRENT DIPOLE ' + xyz, obj.variable('SCF DIPOLE ' + xyz))
+            obj.set_variable('CURRENT DIPOLE', obj.variable("SCF DIPOLE"))
+
+
+def scf_orbital_io_helper(scf_wfn, **kwargs):
+    # Write out MO's
+    scf_molecule = kwargs.get('molecule', core.get_active_molecule())
+    if core.get_option("SCF", "PRINT_MOS"):
+        mowriter = core.MOWriter(scf_wfn)
+        mowriter.write()
+
+    # Write out a molden file
+    if core.get_option("SCF", "MOLDEN_WRITE"):
+        filename = core.get_writer_file_prefix(scf_molecule.name()) + ".molden"
+        dovirt = bool(core.get_option("SCF", "MOLDEN_WITH_VIRTUAL"))
+
+        occa = scf_wfn.occupation_a()
+        occb = scf_wfn.occupation_a()
+
+        mw = core.MoldenWriter(scf_wfn)
+        mw.write(filename, scf_wfn.Ca(), scf_wfn.Cb(), scf_wfn.epsilon_a(),
+                 scf_wfn.epsilon_b(), scf_wfn.occupation_a(),
+                 scf_wfn.occupation_b(), dovirt)
+
+    # Write out orbitals and basis; Can be disabled, e.g., for findif displacements
+    if kwargs.get('write_orbitals', True):
+        write_filename = scf_wfn.get_scratch_filename(180)
+
+        scf_wfn.to_file(write_filename)
+        extras.register_numpy_file(write_filename)
+
+def _run_post_losc(dfa_name, dfa_wfn, **kargs):
+    pass
+
+def _run_scf_losc(dfa_name, dfa_wfn, **kargs):
+    """
+    Note:
+    -----
+    1. `scf_helper()` function is used in this module to perform SCF
+    calculation. However, in LOSC, we decide not to rely on `scf_helper()`
+    to do SCF-LOSC calculation. `scf_helper()` includes options of
+    casting-up calculations to help SCF to converge, in which an SCF
+    with smaller basis set is done first and fed to the following SCF
+    with the real basi set. Such logic make integerating SCF-LOSC in
+    `scf_helper()` difficult. Because the initial guess of SCF is very
+    limited. That is, SCF-LOSC has to use the converged COs from the parent
+    DFA as the initial guess. So we code the procedure of SCF-LOSC
+    individually here.
+    """
+    kargs['losc_do'] = True
+    scf_wfn = scf_wavefunction_factory(dfa_name, dfa_wfn, core.get_option('SCF', 'REFERENCE'), **kargs)
+
+    # set up initial guess of SCF-LOSC-DFA with converged COs
+    # from the parent DFA.
+    Ca_occ = dfa_wfn.Ca_subset("SO", "OCC")
+    Cb_occ = dfa_wfn.Cb_subset("SO", "OCC")
+    scf_wfn.guess_Ca(Ca_occ)
+    scf_wfn.guess_Cb(Cb_occ)
+
+    # do scf-LOSC-DFA calculations.
+    e_scf = scf_wfn.compute_energy()
+    for obj in [core, scf_wfn]:
+        for pv in ["SCF TOTAL ENERGY", "CURRENT ENERGY", "CURRENT REFERENCE ENERGY"]:
+            obj.set_variable(pv, e_scf)
+
+    # calculate some properties.
+    scf_property_helper(scf_wfn, **kargs)
+
+    # I/O of orbitals
+    scf_orbital_io_helper(scf_wfn, **kargs)
+
+    return scf_wfn
+
+def run_losc(name, **kargs):
+    """Function endcoding the sequence of LOSC calcualtions.
+
+    Parameters:
+    -----------
+    name: str, the name of LOSC-DFA, e.g., "losc b3lyp", separated by space.
+    kargs['losc_how']: str in ['scf', 'post']. Do SCF or post-SCF LOSC-DFA.
+        Default to 'scf'.
+    kargs['losc_parent_wfn']: wavefunction object of parent DFA. Default to
+        None. The wavefunction of parent DFA will be calculated internally.
+
+    Return:
+    -------
+    The wavefunction object of LOSC-DFA.
+
+    Note:
+    -----
+    1. `name` is for sure a pure LOSC DFA name, with the format of '[losc] dfa'.
+    It can not be any string with basis settings, like `losc b3lyp/3-21g`.
+    """
+    name = name.lower()
+    kwargs = p4util.kwargs_lower(kargs)
+    kargs['losc_do'] = True
+
+    # get active molecule.
+    molecule = kwargs.get('molecule', core.get_active_molecule())
+
+    # TODO:
+    # currenty only supports c1 symmetry.
+    if molecule.schoenflies_symbol() != 'c1':
+        core.print_out("Current LOSC code must be running in c1 symmetry, switching to c1!\n")
+        molecule = molecule.clone()
+        molecule.reset_point_group('c1')
+        molecule.update_geometry()
+        kargs['molecule'] = molecule
+
+    # Validate input LOSC-DFA name.
+    if not name.startswith('losc '):
+        raise ValidationError('wrong name to run LOSC calculation.')
+    dfa_name = name.replace('losc ', '').lstrip()
+
+    # Validate input for how to do LOSC.
+    losc_how = kargs.pop('losc_how', 'scf')
+    if losc_how not in ['scf', 'post']:
+        raise ValidationError('don not know how to apply LOSC. post-scf or scf?')
+
+    # Validate parent DFA type. LOSC can only be applied to
+    # LDA, GGA, hybrid and long-range corrected functionals.
+    # TODO:
+    # long-range corrected functionals will be done later.
+    base_wfn = core.Wavefunction.build(molecule, core.get_global_option('BASIS'))
+    base_wfn = scf_wavefunction_factory(dfa_name, base_wfn, core.get_option('SCF', 'REFERENCE'), **kwargs)
+    ssuper = base_wfn.functional()
+    if ssuper.is_x_lrc():
+        raise ValidationError('current LOSC does not support range-separated exchange functional.')
+    if ssuper.is_c_hybrid():
+        raise ValidationError('Sorry, LOSC does not support double hybrid functional.')
+    if ssuper.is_meta():
+        raise ValidationError('Sorry, LOSC does not support meta-GGA.')
+
+    # LOSC-DFA calculation is alawys based on a converged SCF-DFA calculation.
+    # do SCF-DFA if it is not provided from the input of the function call.
+    parent_wfn = kargs.pop('losc_parent_wfn', None)
+    if not parent_wfn:
+        kargs['losc_do'] = False
+        parent_wfn = run_scf(dfa_name, **kargs)
+        kargs['losc_do'] = True
+
+    # Validate the parent DFA wavefunction matchs with the input DFA name.
+    name_parent_dfa = parent_wfn.functional().name()
+    if name_parent_dfa.lower() != dfa_name.lower():
+        raise ValidationError(f'LOSC: functional names mismatch: name={dfa_name}, dfa_wfn.name={name_parent_dfa}.')
+
+    if losc_how == 'scf':
+        return _run_scf_losc(dfa_name, parent_wfn, **kargs)
+    elif losc_how == 'post':
+        return _run_post_losc(dfa_name, parent_wfn, **kargs)
 
 def run_scf(name, **kwargs):
     """Function encoding sequence of PSI module calls for
@@ -4073,7 +4252,7 @@ def run_sapt(name, **kwargs):
     core.print_out('\n')
 
     # Compute dimer wavefunction
-    
+
     if (sapt_basis == 'dimer') and (ri == 'DF'):
         core.set_global_option('DF_INTS_IO', 'SAVE')
 
@@ -4088,7 +4267,7 @@ def run_sapt(name, **kwargs):
     if (sapt_basis == 'dimer') and (ri == 'DF'):
         core.set_global_option('DF_INTS_IO', 'LOAD')
 
-    
+
     # Compute Monomer A wavefunction
     if (sapt_basis == 'dimer') and (ri == 'DF'):
         core.IO.change_file_namespace(97, 'dimer', 'monomerA')
@@ -4097,7 +4276,7 @@ def run_sapt(name, **kwargs):
     core.print_out('\n')
     p4util.banner('Monomer A HF')
     core.print_out('\n')
-    
+
     core.timer_on("SAPT: Monomer A SCF")
     monomerA_wfn = scf_helper('RHF', molecule=monomerA, **kwargs)
     core.timer_off("SAPT: Monomer A SCF")
