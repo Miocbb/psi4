@@ -34,10 +34,31 @@ using SharedLOSC = std::shared_ptr<LOSC>;
  */
 class LOSC : public psi::scf::HF {
    protected:
-    /**
-     * LOSC curvature matrices.
-     */
-    SharedMatrix curvature_[2];
+    int nelec_[2];  // Total electron number.
+    size_t nspin_;  // 1 for restricted, 2 for unrestricted.
+
+    // LOSC matrix pointers.
+    SharedMatrix curvature_[2];  // LOSC curvature matrix.
+    SharedMatrix J_;             // Coulomb matrix.
+    SharedMatrix K_[2];          // exact exchange matrix.
+    SharedMatrix V_losc_[2];     // LOSC effective potential matrix.
+    SharedMatrix G_[2];          // G matrix: G = J + K + V_dfa + V_losc.
+
+    // ==> convenient shared pointers to matrices <==
+    // convenient shared pointers should be assigned back
+    // the base class shared pointers afther the construction
+    // of the corresponding matrices.
+
+    // convenient pointers from psi::scf::HF.
+    SharedMatrix V_[2];  // LOSC-DFA potential matrix: V = V_dfa + V_losc.
+
+    // convenient pointers from psi::Wavefunction.
+    SharedMatrix F_[2];    // LOSC-DFA Fock matrix.
+    SharedMatrix C_[2];    // CO coefficient matrix.
+    SharedMatrix D_[2];    // density matrix.
+    SharedVector eig_[2];  // CO eigenvalues.
+
+    void common_init();
 
    public:
     /**
@@ -62,6 +83,11 @@ class LOSC : public psi::scf::HF {
          std::shared_ptr<PSIO> psio);
 
     ~LOSC() override;
+
+    /**
+     * Calculate the LOSC effective potential matrix.
+     */
+    virtual void form_V_losc();
 
     /**
      * calculate the LOSC-DFA COs' coefficient matrix.

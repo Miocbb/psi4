@@ -7,9 +7,8 @@
 
 namespace psi {
 namespace losc {
-
 class LocalizerBase {
-  protected:
+   protected:
     SharedLOSC losc_wfn_;
     /**
      * Maximum iteration number of Jacobi-sweep algorithm for localization.
@@ -64,7 +63,7 @@ class LocalizerBase {
      */
     SharedMatrix set_guess_u_idenity(int spin);
 
-  public:
+   public:
     /**
      * Constructor of localization base.
      */
@@ -91,7 +90,7 @@ class LocalizerBase {
  * @see The first paper of LOSC https://doi.org/10.1093/nsr/nwx111.
  */
 class LocalizerV2 : public LocalizerBase {
-  protected:
+   protected:
     /**
      * KS Halmiltonian matrix of the DFA (NOT LOSC-DFA) on AO.
      */
@@ -109,7 +108,7 @@ class LocalizerV2 : public LocalizerBase {
      */
     double para_gamma_;
 
-  public:
+   public:
     /**
      * Constructor of localization version 2.
      */
@@ -128,7 +127,7 @@ class LocalizerV2 : public LocalizerBase {
     SharedMatrix compute(int spin) override;
 };
 
-} // namespace losc
-} // namespace psi
+}  // namespace losc
+}  // namespace psi
 
 #endif
