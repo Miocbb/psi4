@@ -8,15 +8,13 @@
 #include "psi4/libfock/v.h"
 #include "psi4/liboptions/liboptions.h"
 #include "psi4/libpsi4util/libpsi4util.h"
+#include "psi4/libdiis/diismanager.h"
 
 #include <string>
+#include <vector>
 
 namespace psi {
 namespace losc {
-
-using std::string;
-using Wfn = Wavefunction;
-
 void LOSC::common_init() {
     // current implementation is only for c1 symmetry.
     if (molecule()->schoenflies_symbol() != "c1")
@@ -72,46 +70,36 @@ void LOSC::common_init() {
     }
 }
 
-LOSC::LOSC(SharedWavefunction dfa_wfn, std::shared_ptr<SuperFunctional> func)
-    : psi::scf::HF(dfa_wfn, func, dfa_wfn->options(), PSIO::shared_object()) {
+LOSC::LOSC(SharedWavefunction dfa_wfn, shared_ptr<SuperFunctional> func)
+    : psi::scf::HF(dfa_wfn, func, dfa_wfn->options(), PSIO::shared_object()),
+      V_{HF::Va_, HF::Vb_},
+      F_{Wfn::Fa_, Wfn::Fb_},
+      C_{Wfn::Ca_, Wfn::Cb_},
+      D_{Wfn::Da_, Wfn::Db_},
+      eig_{Wfn::epsilon_a_, Wfn::epsilon_b_} {
     common_init();
 }
 
-LOSC::LOSC(SharedWavefunction dfa_wfn, std::shared_ptr<SuperFunctional> func,
-           Options& options, std::shared_ptr<PSIO> psio)
-    : psi::scf::HF(dfa_wfn, func, options, PSIO::shared_object()) {}
+LOSC::LOSC(SharedWavefunction dfa_wfn, shared_ptr<SuperFunctional> func,
+           Options& options, shared_ptr<PSIO> psio)
+    : psi::scf::HF(dfa_wfn, func, options, PSIO::shared_object()),
+      V_{HF::Va_, HF::Vb_},
+      F_{Wfn::Fa_, Wfn::Fb_},
+      C_{Wfn::Ca_, Wfn::Cb_},
+      D_{Wfn::Da_, Wfn::Db_},
+      eig_{Wfn::epsilon_a_, Wfn::epsilon_b_} {
+    common_init();
+}
 
 LOSC::~LOSC() {}
 
-/**
- * @note
- * Calling this function will allocate and compute following variables:
- * `C_`, `Wfn::Ca_`, `Wfn::Cb_`: the COs' coefficient matrix.
- * `eig_`: the orbital energies of COs.
- */
 void LOSC::form_C() {
     for (size_t is = 0; is < nspin_; ++is) {
-        const string C_name = (is == 1 ? "Ca" : "Cb");
-        const string eig_name =
-            (is == 1 ? "Alpha orbital energy" : "Beta orbital energy");
-        C_[is] = SharedMatrix(factory_->create_matrix(C_name));
-        eig_[is] = SharedVector(factory_->create_vector());
-        eig_[is]->set_name(eig_name);
-
         diagonalize_F(F_[is], C_[is], eig_[is]);
     }
-
-    // assign back to wavefunction.
-    Wfn::Ca_ = C_[0];
-    Wfn::Cb_ = (nspin_ == 1 ? C_[0] : C_[1]);
-
     find_occupation();
 }
-/**
- * @note
- * Calling this function will allocate and compute following variables:
- * `D_`, `Wfn::Da_`, `Wfn::Db_`: the density matrix.
- */
+
 void LOSC::form_D() {
     // Fully occupied COs' coefficient matrix.
     // [nbasis x nocc].
@@ -121,34 +109,20 @@ void LOSC::form_D() {
         const size_t nocc = nelec_[is];
         // Copy the occupied block of the orbital matrix.
         C_occ[is] = std::make_shared<Matrix>("Occupied COs", nso_, nocc);
+        auto t = C_[is];
         for (int p = 0; p < nso_; ++p) {
             for (int i = 0; i < nocc; ++i) {
                 C_occ[is]->set(p, i, C_[is]->get(p, i));
             }
         }
         // D = C_occ * C_occ.T
-        const string name =
-            (is == 1 ? "Density matrix: alpha" : "Density matrix: beta");
-        D_[is] = SharedMatrix(factory_->create_matrix(name));
         D_[is]->gemm(false, true, 1.0, C_occ[is], C_occ[is], 0.0);
     }
-
-    // assign back to wavefunction.
-    Wfn::Da_ = D_[0];
-    Wfn::Db_ = (nspin_ == 1 ? D_[0] : D_[1]);
 }
 
-/**
- * @note
- * Calling this function will allocate and compute following variables:
- * `F_`, `Wfn::Fa_`, `Wfn::Fb_`: the Fock matrix.
- */
 void LOSC::form_F() {
     // F_a = H + G_a + V_ext.
     for (size_t is = 0; is < nspin_; ++is) {
-        const string name =
-            (is == 1 ? "Fock matrix: alpha" : "Fock matrix: beta");
-        F_[is] = SharedMatrix(factory_->create_matrix(name));
         F_[is]->copy(H_);
         F_[is]->add(G_[is]);
         for (const auto& Vext : external_potentials_) {
@@ -165,10 +139,6 @@ void LOSC::form_F() {
             G_[is]->print();
         }
     }
-
-    // assign back to the wavefunction
-    Wfn::Fa_ = F_[0];
-    Wfn::Fb_ = (nspin_ == 1 ? F_[0] : F_[1]);
 }
 
 /**
@@ -177,22 +147,21 @@ void LOSC::form_F() {
  * `J_`: Coulomb matrix.
  * `K_`: exchange matrix.
  * `V_losc_`: LOSC effective potential.
- * `V_`: LOSC-DFA effective potential.
  * `G_`: G matrix.
  */
 void LOSC::form_G() {
     // Compute J and K.
     // Push the C matrix on
-    std::vector<SharedMatrix>& C = jk_->C_left();
+    vector<SharedMatrix>& C = jk_->C_left();
     C.clear();
     C.push_back(Ca_subset("SO", "OCC"));
     C.push_back(Cb_subset("SO", "OCC"));
     // Run the JK object
     jk_->compute();
     // Pull the J and K matrices off
-    const std::vector<SharedMatrix>& J = jk_->J();
-    const std::vector<SharedMatrix>& K = jk_->K();
-    const std::vector<SharedMatrix>& wK = jk_->wK();
+    const vector<SharedMatrix>& J = jk_->J();
+    const vector<SharedMatrix>& K = jk_->K();
+    const vector<SharedMatrix>& wK = jk_->wK();
 
     // save J and K.
     J_ = SharedMatrix(factory_->create_matrix("J"));
@@ -215,7 +184,7 @@ void LOSC::form_G() {
 
     const double alpha = functional_->x_alpha();
     for (size_t is = 0; is < nspin_; ++is) {
-        // G_a = J_a + J_b - alpha * K_a.
+        // G_a = J_a + J_b - alpha * K_a + V.
         G_[is] = SharedMatrix(factory_->create_matrix("G"));
         G_[is]->copy(J_);
         if (functional_->is_x_hybrid()) {
@@ -241,33 +210,34 @@ void LOSC::form_G() {
  * Calling this function will allocate and compute `V_losc`, the LOSC effective
  * potential matrix.
  */
-void LOSC::form_V_losc() {}
+void LOSC::form_V_losc() {
+    for (size_t is = 0; is < nspin_; ++is) {
+        V_losc_[is] = SharedMatrix(factory_->create_matrix("V_losc"));
+        // TODO: Add construnction of V_losc later.
+    }
+}
 
 /**
  * @note
  * Calling this function will allocate and compute the following matrices:
  * `V_losc`: LOSC effective potential matrix.
- * `V_` and `Wfn::V_`, the LOSC-DFA potential matrix.
  */
 void LOSC::form_V() {
-    HF::Va_ = SharedMatrix(factory_->create_matrix("Va"));
-    HF::Vb_ = HF::Va_;
-    V_[0] = Va_;
-    if (nspin_ == 2) {
-        HF::Vb_ = SharedMatrix(factory_->create_matrix("Vb"));
-        V_[1] = Vb_;
-    }
-
     // `potential_` is `HF::potential_`, whose `compute_V`
     // is not implemented and will throw error. No worries here,
     // because `HF::HF()` takes care to initialize it to `psi::RV`
     // or `psi::UV` according to the reference option.
-    potential_->set_D({Da_, Db_});
-    potential_->compute_V({Va_, Vb_});
-
-    form_V_losc();
+    vector<SharedMatrix> D;
+    vector<SharedMatrix> V;
+    for (size_t is = 0; is < nspin_; ++is) {
+        D.push_back(D_[is]);
+        V.push_back(V_[is]);
+    }
+    potential_->set_D(D);
+    potential_->compute_V(V);
 
     // V = V_dfa + V_losc.
+    form_V_losc();
     for (size_t is = 0; is < nspin_; ++is) {
         V_[is]->add(V_losc_[is]);
     }
@@ -283,10 +253,11 @@ double LOSC::compute_E() {
     double E_coulomb = 0.0;
     double E_exchange = 0.0;
     const double alpha = functional_->x_alpha();
+    const double factor = nspin_ == 1 ? 2.0 : 1.0;
     for (size_t is = 0; is < nspin_; ++is) {
-        E_one_electron += D_[is]->vector_dot(H_);
-        E_coulomb += D_[is]->vector_dot(J_);
-        E_exchange -= alpha * D_[is]->vector_dot(K_[is]);
+        E_one_electron += factor * D_[is]->vector_dot(H_);
+        E_coulomb += factor * D_[is]->vector_dot(J_);
+        E_exchange -= factor * alpha * D_[is]->vector_dot(K_[is]);
     }
 
     double E_xc = 0.0;
@@ -331,24 +302,136 @@ double LOSC::compute_E() {
 void LOSC::finalize() {
     // make sure all internally used variables are released.
     J_.reset();
-    for (size_t is = 0; is < 2; ++is) {
+    for (size_t is = 0; is < nspin_; ++is) {
+        curvature_[is].reset();
         K_[is].reset();
         V_losc_[is].reset();
         G_[is].reset();
-        V_[is].reset();
-        F_[is].reset();
-        C_[is].reset();
-        D_[is].reset();
-        eig_[is].reset();
+        D_old_[is].reset();
     }
     HF::finalize();
 }
 
-void LOSC::damping_update(double) {
-    throw PSIEXCEPTION("Sorry, LOSC::damping_update() is not implemented yet.");
+void LOSC::save_density_and_energy() {
+    for (size_t is = 0; is < nspin_; ++is) {
+        if (!D_old_[is]) {
+            const string name = (is == 1 ? "D_old_a" : "D_old_b");
+            D_old_[is] = SharedMatrix(factory_->create_matrix(name));
+        }
+        D_old_[is]->copy(D_[is]);
+    }
 }
 
-SharedLOSC LOSC::c1_deep_copy(std::shared_ptr<BasisSet> basis) {
+void LOSC::damping_update(double factor) {
+    // D = (1 - f) * D + f * D_old.
+    for (size_t is = 0; is < nspin_; ++is) {
+        D_[is]->scale(1.0 - factor);
+        D_[is]->axpy(factor, D_old_[is]);
+    }
+}
+
+bool LOSC::diis() {
+    if (nspin_ == 1)
+        return diis_manager_->extrapolate(1, F_[0].get());
+    else if (nspin_ == 2)
+        return diis_manager_->extrapolate(2, F_[0].get(), F_[1].get());
+    else
+        throw PSIEXCEPTION("LOSC diis: unknown spin.");
+}
+
+double LOSC::compute_orbital_gradient(bool save_fock, int max_diis_vectors) {
+    // Conventional DIIS (X'[FDS - SDF]X, where X levels things out)
+    SharedMatrix gradient[2];
+    for (size_t is = 0; is < nspin_; ++is) {
+        gradient[is] = form_FDSmSDF(F_[is], D_[is]);
+    }
+
+    if (save_fock) {
+        // make sure the diis manager initialized.
+        if (initialized_diis_manager_ == false) {
+            if (scf_type_ == "DIRECT") {
+                diis_manager_ = std::make_shared<DIISManager>(
+                    max_diis_vectors, "LOSC DIIS vector",
+                    DIISManager::LargestError, DIISManager::InCore);
+            } else {
+                diis_manager_ = std::make_shared<DIISManager>(
+                    max_diis_vectors, "LOSC DIIS vector",
+                    DIISManager::LargestError, DIISManager::OnDisk);
+            }
+            if (nspin_ == 1) {
+                // RKS
+                diis_manager_->set_error_vector_size(1, DIISEntry::Matrix,
+                                                     gradient[0].get());
+                diis_manager_->set_vector_size(1, DIISEntry::Matrix,
+                                               F_[0].get());
+            } else if (nspin_ == 2) {
+                // UKS
+                diis_manager_->set_error_vector_size(
+                    2, DIISEntry::Matrix, gradient[0].get(), DIISEntry::Matrix,
+                    gradient[1].get());
+                diis_manager_->set_vector_size(2, DIISEntry::Matrix,
+                                               F_[0].get(), DIISEntry::Matrix,
+                                               F_[1].get());
+            } else {
+                throw PSIEXCEPTION(
+                    "LOSC diis: unknown spin to calculate orbital gradients.");
+            }
+            initialized_diis_manager_ = true;
+        }
+        // save diis
+        if (nspin_ == 1)
+            diis_manager_->add_entry(2, gradient[0].get(), F_[0].get());
+        else
+            diis_manager_->add_entry(4, gradient[0].get(), F_[0].get(),
+                                     gradient[1].get(), F_[1].get());
+    }
+
+    const double rms_v = gradient[0]->rms();
+    const double max_v = gradient[0]->absmax();
+    double rms[2] = {rms_v, rms_v};
+    double max[2] = {max_v, max_v};
+    if (nspin_ == 2) {
+        rms[1] = gradient[1]->rms();
+        max[1] = gradient[1]->absmax();
+    }
+
+    if (options_.get_bool("DIIS_RMS_ERROR")) {
+        return std::sqrt(0.5 * (std::pow(rms[0], 2) + std::pow(rms[1], 2)));
+    } else {
+        return std::max(max[0], max[1]);
+    }
+}
+
+int LOSC::soscf_update(double soscf_conv, int soscf_min_iter,
+                       int soscf_max_iter, int soscf_print) {
+    throw PSIEXCEPTION("Sorry, LOSC::soscf_update() is not implemented yet.");
+}
+
+bool LOSC::stability_analysis() {
+    throw PSIEXCEPTION(
+        "Sorry, LOSC::stability_analysis() is not implemented yet.");
+}
+
+vector<SharedMatrix> LOSC::onel_Hx(vector<SharedMatrix> x) {
+    throw PSIEXCEPTION("Sorry, LOSC::onel_Hx() is not implemented yet.");
+}
+
+vector<SharedMatrix> LOSC::twoel_Hx(vector<SharedMatrix> x, bool combine,
+                                    string return_basis) {
+    throw PSIEXCEPTION("Sorry, LOSC::twoel_Hx() is not implemented yet.");
+}
+
+vector<SharedMatrix> LOSC::cphf_Hx(vector<SharedMatrix> x) {
+    throw PSIEXCEPTION("Sorry, LOSC::cphf_Hx() is not implemented yet.");
+}
+
+vector<SharedMatrix> LOSC::cphf_solve(vector<SharedMatrix> x_vec,
+                                      double conv_tol, int max_iter,
+                                      int print_lvl) {
+    throw PSIEXCEPTION("Sorry, LOSC::cphf_solve() is not implemented yet.");
+}
+
+SharedLOSC LOSC::c1_deep_copy(shared_ptr<BasisSet> basis) {
     throw PSIEXCEPTION("Sorry, LOSC::c1_deep_copy() is not implemented yet.");
 }
 
