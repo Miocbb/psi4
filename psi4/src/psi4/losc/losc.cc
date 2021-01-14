@@ -1,4 +1,6 @@
 #include "losc.h"
+#include "option_key.h"
+#include "localization.h"
 #include "psi4/libpsi4util/exception.h"
 #include "psi4/libmints/matrix.h"
 #include "psi4/libmints/wavefunction.h"
@@ -12,18 +14,22 @@
 
 #include <string>
 #include <vector>
+#include <memory>
 
 namespace psi {
 namespace losc {
 void LOSC::common_init() {
+    if (!functional_->needs_xc())
+        throw PSIEXCEPTION(
+            "You can only apply LOSC to a DFT functional, not HF!");
+
+    if (functional_->is_x_lrc())
+        throw PSIEXCEPTION(
+            "LOSC code does not support long range corrected functionals yet!");
+
     // current implementation is only for c1 symmetry.
     if (molecule()->schoenflies_symbol() != "c1")
         throw PSIEXCEPTION("LOSC only supports C1 symmetry for now!");
-
-    if (functional_->is_x_lrc()) {
-        throw PSIEXCEPTION(
-            "LOSC code does not support long range corrected functional yet!");
-    }
 
     // set up reference at first!
     const string reference = to_lower_copy(options_.get_str("reference"));
@@ -68,26 +74,33 @@ void LOSC::common_init() {
         Wfn::epsilon_b_ = SharedVector(factory_->create_vector());
         Wfn::epsilon_b_->set_name("beta orbital energies");
     }
+
+    // initialize the size of vectors of data based on spin.
+    K_.assign(nspin_, nullptr);
+    V_losc_.assign(nspin_, nullptr);
+    G_.assign(nspin_, nullptr);
+    D_old_.assign(nspin_, nullptr);
+    curvature_.assign(nspin_, nullptr);
+    C_lo_.assign(nspin_, nullptr);
+    local_occ_.assign(nspin_, nullptr);
 }
 
-LOSC::LOSC(SharedWavefunction dfa_wfn, shared_ptr<SuperFunctional> func)
-    : psi::scf::HF(dfa_wfn, func, dfa_wfn->options(), PSIO::shared_object()),
+/**
+ * @note
+ * The constructor of the base HF class takes a shallow copy of the input
+ * wavefunction. We don't want the copy. We just need `dfa_wfn` as a reference
+ * wavefunction that can be used for localization to obtain LOs.
+ */
+LOSC::LOSC(SharedHF dfa_wfn)
+    : psi::scf::HF(
+          std::make_shared<Wfn>(dfa_wfn->molecule(), dfa_wfn->basisset()),
+          dfa_wfn->functional(), dfa_wfn->options(), PSIO::shared_object()),
       V_{HF::Va_, HF::Vb_},
       F_{Wfn::Fa_, Wfn::Fb_},
       C_{Wfn::Ca_, Wfn::Cb_},
       D_{Wfn::Da_, Wfn::Db_},
       eig_{Wfn::epsilon_a_, Wfn::epsilon_b_} {
-    common_init();
-}
-
-LOSC::LOSC(SharedWavefunction dfa_wfn, shared_ptr<SuperFunctional> func,
-           Options& options, shared_ptr<PSIO> psio)
-    : psi::scf::HF(dfa_wfn, func, options, PSIO::shared_object()),
-      V_{HF::Va_, HF::Vb_},
-      F_{Wfn::Fa_, Wfn::Fb_},
-      C_{Wfn::Ca_, Wfn::Cb_},
-      D_{Wfn::Da_, Wfn::Db_},
-      eig_{Wfn::epsilon_a_, Wfn::epsilon_b_} {
+    set_reference_wavefunction(dfa_wfn);
     common_init();
 }
 
@@ -104,52 +117,39 @@ void LOSC::form_D() {
     // Fully occupied COs' coefficient matrix.
     // [nbasis x nocc].
     // TODO: take care of fractional occupation number.
-    SharedMatrix C_occ[2];
     for (size_t is = 0; is < nspin_; ++is) {
         const size_t nocc = nelec_[is];
         // Copy the occupied block of the orbital matrix.
-        C_occ[is] = std::make_shared<Matrix>("Occupied COs", nso_, nocc);
-        auto t = C_[is];
+        auto C_occ = std::make_shared<Matrix>("Occupied COs", nso_, nocc);
         for (int p = 0; p < nso_; ++p) {
             for (int i = 0; i < nocc; ++i) {
-                C_occ[is]->set(p, i, C_[is]->get(p, i));
+                C_occ->set(p, i, C_[is]->get(p, i));
             }
         }
         // D = C_occ * C_occ.T
-        D_[is]->gemm(false, true, 1.0, C_occ[is], C_occ[is], 0.0);
-    }
-}
-
-void LOSC::form_F() {
-    // F_a = H + G_a + V_ext.
-    for (size_t is = 0; is < nspin_; ++is) {
-        F_[is]->copy(H_);
-        F_[is]->add(G_[is]);
-        for (const auto& Vext : external_potentials_) {
-            F_[is]->add(Vext);
-        }
-
-        if (debug_) {
-            F_[is]->print();
-            if (is == 1) J_->print();
-            K_[is]->print();
-            if (functional_->needs_xc()) {
-                V_[is]->print();
-            }
-            G_[is]->print();
-        }
+        D_[is]->gemm(false, true, 1.0, C_occ, C_occ, 0.0);
     }
 }
 
 /**
  * @note
- * Calling this function will allocate and compute the following matrices:
- * `J_`: Coulomb matrix.
- * `K_`: exchange matrix.
- * `V_losc_`: LOSC effective potential.
- * `G_`: G matrix.
+ * 1. In principle, this function calculates the total Fock matrix F = F_dfa +
+ * F_losc for the LOSC-DFA. The construction of F_losc is based on F_dfa. Thus,
+ * we need to build F_dfa first.
+ * 2. During the construction of F, all the intermediate matrices, like G,
+ * J, K, V_dfa and V_losc, are computed as well. There is no need to explicitly
+ * expose functions to compute these intermediate matrices like what they did
+ * in `scf::RHF` and `scf::UHF`. Here, we only override the `HF::form_F`
+ * function.
+ * 3. After calling this function, the total Fock matrices are updated in
+ * `Wfn::Fa_` and `Wfn::Fb_`, and the total LOSC-DFA potential matrices V are
+ * updated in `HF::Va_` and `HF::Vb_`.
  */
-void LOSC::form_G() {
+void LOSC::form_F() {
+    // F_a = H + G_a + V_ext
+    // G_a = J_a + J_b - alpha * K_a + V_dfa + V_losc
+
+    // ==> build DFA Fock (without LOSC contribution) <==
     // Compute J and K.
     // Push the C matrix on
     vector<SharedMatrix>& C = jk_->C_left();
@@ -177,9 +177,21 @@ void LOSC::form_G() {
         }
     }
 
-    // Compute LOSC-DFA potential: V = V_dfa + V_losc.
+    // Compute DFA potential V_dfa.
     if (functional_->needs_xc()) {
-        form_V();
+        // `potential_` is `HF::potential_`, whose `compute_V`
+        // is not implemented and will throw error. No worries here,
+        // because `HF::HF()` takes care to initialize it to `psi::RV`
+        // or `psi::UV` according to the reference option.
+        vector<SharedMatrix> D;
+        vector<SharedMatrix> V;
+        for (size_t is = 0; is < nspin_; ++is) {
+            D.push_back(D_[is]);
+            V.push_back(V_[is]);
+        }
+        // Note: `potential_` is just DFA potential, not LOSC-DFA potential.
+        potential_->set_D(D);
+        potential_->compute_V(V);
     }
 
     const double alpha = functional_->x_alpha();
@@ -193,58 +205,124 @@ void LOSC::form_G() {
         if (functional_->needs_xc()) {
             G_[is]->add(V_[is]);
         }
-#ifdef USING_BrianQC
-        if (brianEnable and brianEnableDFT) {
-            // BrianQC multiplies with the exact exchange factors inside the
-            // Fock building, so we must not do it here
-            alpha = 1.0;
-            beta = 1.0;
+    }
+
+    // Compute DFA Fock.
+    for (size_t is = 0; is < nspin_; ++is) {
+        F_[is]->copy(H_);
+        F_[is]->add(G_[is]);
+        for (const auto& Vext : external_potentials_) {
+            F_[is]->add(Vext);
         }
-        throw PSIEXCEPTION("losc form_G() does not support BrianQC yet.")
-#endif
-    }
-}
 
-/**
- * @note
- * Calling this function will allocate and compute `V_losc`, the LOSC effective
- * potential matrix.
- */
-void LOSC::form_V_losc() {
-    for (size_t is = 0; is < nspin_; ++is) {
-        V_losc_[is] = SharedMatrix(factory_->create_matrix("V_losc"));
-        // TODO: Add construnction of V_losc later.
+        if (debug_) {
+            F_[is]->print();
+            if (is == 1) J_->print();
+            K_[is]->print();
+            if (functional_->needs_xc()) {
+                V_[is]->print();
+            }
+            G_[is]->print();
+        }
     }
-}
+    // TODO: add LOSC later.
+    return;
 
-/**
- * @note
- * Calling this function will allocate and compute the following matrices:
- * `V_losc`: LOSC effective potential matrix.
- */
-void LOSC::form_V() {
-    // `potential_` is `HF::potential_`, whose `compute_V`
-    // is not implemented and will throw error. No worries here,
-    // because `HF::HF()` takes care to initialize it to `psi::RV`
-    // or `psi::UV` according to the reference option.
-    vector<SharedMatrix> D;
-    vector<SharedMatrix> V;
-    for (size_t is = 0; is < nspin_; ++is) {
-        D.push_back(D_[is]);
-        V.push_back(V_[is]);
-    }
-    potential_->set_D(D);
-    potential_->compute_V(V);
+    // ==> Calculate LOSC-DFA Fock <==
+    // Compute LOSC effective potential.
+    build_V_losc();
 
-    // V = V_dfa + V_losc.
-    form_V_losc();
+    // Compute LOSC-DFA Fock and save LOSC-DFA V and G matrices.
     for (size_t is = 0; is < nspin_; ++is) {
+        F_[is]->add(V_losc_[is]);
+        G_[is]->add(V_losc_[is]);
         V_[is]->add(V_losc_[is]);
     }
 }
 
+/**
+ * @note
+ * 1. This is for frozen LO LOSC. Only build LO once.
+ */
+void LOSC::build_lo() {
+    static size_t eval_num = 0;
+    // Check if the LOs are constructed or not.
+    bool do_lo = false;
+    if (eval_num = 0 || C_lo_.size() == 0) do_lo = true;
+    for (auto& lo : C_lo_) {
+        if (!lo) do_lo = true;
+    }
+    if (!do_lo) return;
+
+    int version = options_.get_int(option_localize_version);
+    std::shared_ptr<LocalizerBase> localizer = nullptr;
+    if (version == 2) {
+        localizer = std::make_shared<LocalizerV2>(reference_wavefunction_);
+    } else {
+        throw PSIEXCEPTION(
+            "Sorry, currently only support localization version 2.");
+    }
+
+    localizer->localize();
+    C_lo_ = localizer->get_LO();
+    eval_num = 1;
+}
+
+void LOSC::build_local_occupation() {
+    local_occ_.clear();
+    const size_t nso = basisset_->nbf();
+    for (size_t is = 0; is < nspin_; ++is) {
+        if (!C_lo_[is])
+            throw PSIEXCEPTION(
+                "LOSC implementation error: construct LOs first.");
+        const size_t nlo = C_lo_[is]->ncol();
+        auto SC = std::make_shared<Matrix>(nso, nlo);
+        SC->gemm(false, false, 1.0, S_, C_lo_[is], 0.0);
+        local_occ_.push_back(
+            linalg::triplet(SC, D_[is], SC, true, false, false));
+    }
+}
+
+void LOSC::build_V_losc() {
+    build_lo();
+    build_local_occupation();
+
+    const size_t nso = basisset_->nbf();
+    for (size_t is = 0; is < nspin_; ++is) {
+        const size_t nlo = C_lo_[is]->ncol();
+        // build A matrix.
+        auto A = std::make_shared<Matrix>(nlo, nlo);
+        for (size_t i = 0; i < nlo; ++i) {
+            for (size_t j = 0; j <= i; ++j) {
+                // TODO: Add curvature contribution to V_losc later.
+                const double K_ij = 0;
+                const double L_ij = local_occ_[is]->get(i, j);
+                if (i != j) {
+                    A->set(i, j, -K_ij * L_ij);
+                } else {
+                    A->set(i, j, 0.5 * K_ij - K_ij * L_ij);
+                    A->set(j, i, 0.5 * K_ij - K_ij * L_ij);
+                }
+            }
+        }
+
+        // calculate Losc correcting Hamiltonian matrix.
+        auto CS = std::make_shared<Matrix>(nlo, nso);
+        CS->gemm(true, false, 1.0, C_lo_[is], S_, 0.0);
+        V_losc_[is] = linalg::triplet(CS, A, CS, true, false, false);
+    }
+}
+
+// TODO: implement later.
+double LOSC::compute_losc_energy() { return 0; }
+
+/**
+ * @note
+ * We did not check if the internal matrices used to calculate the energy
+ * is constructed or not. Just the evaluation.
+ */
 double LOSC::compute_E() {
-    // General expression of electronic total energy:
+    // General expression of electronic total energy for a DFA:
     // E_elec  = \sum_s D_s * H + 1/2 * (J_a + J_b) * D_s - 1/2 * K_s * D_s
     // Summation over index a is for spin. Index a and b are for
     // alpha and beta spin respectively.
@@ -269,16 +347,20 @@ double LOSC::compute_E() {
         E_vv10 = potential_->quadrature_values()["VV10"];
     }
 
+    // LOSC energy correction.
+    const double E_corr = compute_losc_energy();
+
     energies_["Nuclear"] = nuclearrep_;
     energies_["One-Electron"] = E_one_electron;
     energies_["Two-Electron"] = 0.5 * (E_coulomb + E_exchange);
     energies_["XC"] = E_xc;
     energies_["VV10"] = E_vv10;
-    energies_["-D"] = scalar_variable("-D Energy");  // dispersion?
+    energies_["-D"] = scalar_variable("-D Energy");
+    energies_["LOSC"] = E_corr;
     double E_D = energies_["-D"];
 
     const double E_tot = nuclearrep_ + E_one_electron +
-                         0.5 * (E_coulomb + E_exchange) + E_xc + E_D;
+                         0.5 * (E_coulomb + E_exchange) + E_xc + E_D + E_corr;
     return E_tot;
 }
 
@@ -400,35 +482,6 @@ double LOSC::compute_orbital_gradient(bool save_fock, int max_diis_vectors) {
     } else {
         return std::max(max[0], max[1]);
     }
-}
-
-int LOSC::soscf_update(double soscf_conv, int soscf_min_iter,
-                       int soscf_max_iter, int soscf_print) {
-    throw PSIEXCEPTION("Sorry, LOSC::soscf_update() is not implemented yet.");
-}
-
-bool LOSC::stability_analysis() {
-    throw PSIEXCEPTION(
-        "Sorry, LOSC::stability_analysis() is not implemented yet.");
-}
-
-vector<SharedMatrix> LOSC::onel_Hx(vector<SharedMatrix> x) {
-    throw PSIEXCEPTION("Sorry, LOSC::onel_Hx() is not implemented yet.");
-}
-
-vector<SharedMatrix> LOSC::twoel_Hx(vector<SharedMatrix> x, bool combine,
-                                    string return_basis) {
-    throw PSIEXCEPTION("Sorry, LOSC::twoel_Hx() is not implemented yet.");
-}
-
-vector<SharedMatrix> LOSC::cphf_Hx(vector<SharedMatrix> x) {
-    throw PSIEXCEPTION("Sorry, LOSC::cphf_Hx() is not implemented yet.");
-}
-
-vector<SharedMatrix> LOSC::cphf_solve(vector<SharedMatrix> x_vec,
-                                      double conv_tol, int max_iter,
-                                      int print_lvl) {
-    throw PSIEXCEPTION("Sorry, LOSC::cphf_solve() is not implemented yet.");
 }
 
 SharedLOSC LOSC::c1_deep_copy(shared_ptr<BasisSet> basis) {

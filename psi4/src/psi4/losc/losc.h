@@ -12,26 +12,29 @@
 #include <memory>
 #include <vector>
 #include <string>
-
 namespace psi {
 namespace losc {
 
 class LOSC;
+class LocalizerBase;
+
 using std::shared_ptr;
 using std::string;
 using std::vector;
-using SharedLOSC = shared_ptr<LOSC>;
 using Wfn = Wavefunction;
+using SharedLOSC = shared_ptr<LOSC>;
+using SharedHF = shared_ptr<psi::scf::HF>;
 
 /**
  * Class of the localized orbital scaling correction (LOSC).
  *
+ * The LOSC class is for the post-SCF (post-LOSC-DFA) or frozen LO SCF
+ * (SCF-LOSC-DFA) correction for an associated DFA.
+ * For SCF-LOSC-DFA, see "J. Phys. Chem. Lett. 2020, 11, 23, 10269–10277".
+ *
  * @note
  * 1. The RKS and UKS LOSC-DFA calculation are combined into one decleration
  * to avoid code duplications.
- * 2. The public interface of LOSC should be the "same" as `psi::scf:RHF`
- * and `psi::scf::RHF`. This consistenty is to avoid modifications in
- * python side code.
  */
 class LOSC : public psi::scf::HF {
    private:
@@ -60,87 +63,60 @@ class LOSC : public psi::scf::HF {
     SpinVector eig_;  // COs' energy. Linked to `Wfn::epsilon_a_` and
                       // `Wfn::epsilon_b_`.
 
+    // Construct LOSC localized orbitals and save it in `C_lo_`.
+    void build_lo();
+    // Construct local occupation and save it in `local_occ_`.
+    void build_local_occupation();
+    // Construct LOSC effective potential and save it in `V_losc_`.
+    void build_V_losc();
+    // Compute and return the LOSC energy correction.
+    double compute_losc_energy();
+
    protected:
     int nelec_[2];  // Total electron number.
     size_t nspin_;  // 1 for restricted, 2 for unrestricted.
 
     // Matrix used and managed in LOSC class.
-    SharedMatrix curvature_[2];  // LOSC curvature matrix.
-    SharedMatrix J_;             // Coulomb matrix.
-    SharedMatrix K_[2];          // exact exchange matrix.
-    SharedMatrix V_losc_[2];     // LOSC effective potential matrix.
-    SharedMatrix G_[2];          // G matrix: G = J + K + V_dfa + V_losc.
-    SharedMatrix D_old_[2];      // The density matrix from last iteration step.
-                                 // Used for update density matrix with damping.
+    SharedMatrix J_;                  // Coulomb matrix.
+    vector<SharedMatrix> K_;          // exact exchange matrix.
+    vector<SharedMatrix> V_losc_;     // LOSC effective potential matrix.
+    vector<SharedMatrix> G_;          // G matrix: G = J + K + V_dfa + V_losc.
+    vector<SharedMatrix> D_old_;      // Save density matrix for damping.
+    vector<SharedMatrix> curvature_;  // LOSC curvature matrix.
+    vector<SharedMatrix> C_lo_;       // LO coefficients.
+    vector<SharedMatrix> local_occ_;  // Local occupation matrix.
 
-    /**
-     * Common initialization in LOSC constructors.
-     */
     void common_init();
 
    public:
     /**
-     * Constructor of LOSC based on the wavefunction from a DFA.
+     * Constructor of LOSC based on the DFA wavefunction.
      *
-     * @param dfa_wfn[in]: the wavefunction of a DFA.
-     * @param functinal[in]: functional object for the DFA.
+     * @param dfa_wfn[in]: the DFA wavefunction.
      */
-    LOSC(SharedWavefunction dfa_wfn, shared_ptr<SuperFunctional> functional);
-
-    /**
-     * Constructor of LOSC based on the wavefunction from a DFA.
-     *
-     * @param dfa_wfn[in]: the wavefunction of a DFA.
-     * @param functinal[in]: functional object for the DFA.
-     * @param options[in]: input options in psi4.
-     * @param psio[in]: what is this?
-     */
-    LOSC(SharedWavefunction dfa_wfn, shared_ptr<SuperFunctional> functional,
-         Options& options, shared_ptr<PSIO> psio);
+    LOSC(SharedHF dfa_wfn);
 
     ~LOSC() override;
 
     // ==> Functions for building matrices <==
     /**
-     * Calculate the LOSC effective potential matrix.
-     */
-    virtual void form_V_losc();
-
-    /**
-     * calculate the LOSC-DFA COs' coefficient matrix.
+     * Diagonalize LOSC-DFA Fock matrix to update CO coefficient matrix.
      */
     void form_C() override;
 
     /**
-     * calculate the LOSC-DFA density matrix.
+     * Calculate the density matrix based on current COs.
      */
     void form_D() override;
 
     /**
-     * calculate the LOSC-DFA Fock (Hamiltonian) matrix.
+     * Calculate the LOSC-DFA Fock (Hamiltonian) matrix based on current COs.
      */
     void form_F() override;
 
-    /**
-     * calculate the LOSC-DFA G matrix.
-     *
-     * G matrix involves the effective contribution from LOSC, i.e.,
-     * G = J + K + Vxc + V_losc.
-     */
-    void form_G() override;
-
-    /**
-     * Calculate the LOSC-DFA potential matrix.
-     *
-     * V = Vxc + V_losc
-     */
-    void form_V() override;
-
     // ==> Functions for SCF iteration <==
     /**
-     * Compute LOSC-DFA total energy.
-     *
-     * E = E_dfa + E_losc
+     * Compute LOSC-DFA total energy based on current COs. E = E_dfa + E_losc.
      */
     double compute_E() override;
 
@@ -171,27 +147,6 @@ class LOSC : public psi::scf::HF {
      */
     double compute_orbital_gradient(bool save_fock,
                                     int max_diis_vectors) override;
-
-    /**
-     * TODO: What is this?
-     */
-    int soscf_update(double soscf_conv, int soscf_min_iter, int soscf_max_iter,
-                     int soscf_print) override;
-
-    /**
-     * TODO: What is this?
-     */
-    bool stability_analysis() override;
-
-    // ==> Hessian-vector computers and solvers <==
-    // TODO: Not implemented yet!
-    vector<SharedMatrix> onel_Hx(vector<SharedMatrix> x) override;
-    vector<SharedMatrix> twoel_Hx(vector<SharedMatrix> x, bool combine = true,
-                                  string return_basis = "MO") override;
-    vector<SharedMatrix> cphf_Hx(vector<SharedMatrix> x) override;
-    vector<SharedMatrix> cphf_solve(vector<SharedMatrix> x_vec,
-                                    double conv_tol = 1.e-4, int max_iter = 10,
-                                    int print_lvl = 1) override;
 
     /**
      * TODO: add details later.

@@ -123,7 +123,7 @@ def initialize_jk(self, memory, jk=None):
     jk.set_omega(functional.x_omega())
 
     jk.set_omega_alpha(functional.x_alpha())
-    jk.set_omega_beta(functional.x_beta())   
+    jk.set_omega_beta(functional.x_beta())
 
     jk.initialize()
     jk.print_header()
@@ -219,7 +219,7 @@ def scf_initialize(self):
         self.guess()
         core.timer_off("HF: Guess")
         # Print out initial docc/socc/etc data
-        if self.get_print():                    
+        if self.get_print():
             lack_occupancy = core.get_local_option('SCF', 'GUESS') in ['SAD']
             if core.get_global_option('GUESS') in ['SAD']:
                 lack_occupancy = core.get_local_option('SCF', 'GUESS') in ['AUTO']
@@ -286,9 +286,13 @@ def scf_iterate(self, e_conv=None, d_conv=None):
         SCFE = 0.0
         self.clear_external_potentials()
 
-        core.timer_on("HF: Form G")
-        self.form_G()
-        core.timer_off("HF: Form G")
+        if isinstance(self, core.LOSC):
+            # No need to call `form_G` to build Fock matrix for LOSC class.
+            pass
+        else:
+            core.timer_on("HF: Form G")
+            self.form_G()
+            core.timer_off("HF: Form G")
 
         upcm = 0.0
         if core.get_option('SCF', 'PCM'):
@@ -692,7 +696,7 @@ def scf_print_energies(self):
     if hasattr(self.molecule(), 'EFP'):
         core.print_out("    EFP Energy =                      {:24.16f}\n".format(eefp))
     core.print_out("    Total Energy =                    {:24.16f}\n".format(total_energy))
-    
+
     if core.get_option('SCF', 'PE'):
         core.print_out(self.pe_state.cppe_state.summary_string)
 

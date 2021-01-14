@@ -1661,10 +1661,30 @@ int read_options(const std::string &name, Options &options, bool suppress_printi
             False otherwise as not yet implemented. -*/
         options.add_bool("WCOMBINE", false);
 
+
+        /* ==> LOSC setting <== */
+
+        /* ==> LOSC general options <== */
         /*- The amount of information of LOSC printed to the output file -*/
         options.add_int(losc::option_print_level, 1);
+
+        /* ==> LOSC localization options <== */
+        /*- The version of LOSC localization. -*/
+        options.add_int(losc::option_localize_version, 2);
         /*- How tightly to converge the localization cost function -*/
         options.add_double(losc::option_localize_convergence, 1.0e-10);
+        /*- max iteration for LOSC localization. -*/
+        options.add_int(losc::option_localize_max_iteration, 1000);
+        /*- Do random permutation in LOSC localization or not. -*/
+        options.add_int(losc::option_localize_random_permute, true);
+        /*- The initial guess of LOSC loclaization. -*/
+        options.add_str(losc::option_localize_guess, "identity", "identity random");
+        /*- The LOSC loclaization version 2 parameter C. -*/
+        options.add_double(losc::option_localize_v2_c, 1000);
+        /*- The LOSC loclaization version 2 parameter gamma. -*/
+        options.add_double(losc::option_localize_v2_gamma, 0.707);
+
+        /* ==> LOSC curvature options <== */
         /*- LOSC curvature_v1 parameter Cx. -*/
         options.add_double(losc::option_curvature_v1_cx, 0.9306526);
         /*- LOSC curvature_v1 parameter tau. -*/

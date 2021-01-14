@@ -1179,7 +1179,7 @@ def scf_wavefunction_factory(name, ref_wfn, reference, **kwargs):
     losc_do = kwargs.get('losc_do', False)
     if losc_do:
         if reference in ["RHF", "RKS", "UHF", "UKS"]:
-            wfn = core.LOSC(ref_wfn, superfunc)
+            wfn = core.LOSC(ref_wfn)
         else:
             raise ValidationError("SCF: Unknown reference (%s) when building the Wavefunction." % reference)
     else:

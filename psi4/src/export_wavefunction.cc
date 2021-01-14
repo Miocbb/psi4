@@ -331,7 +331,7 @@ void export_wavefunction(py::module& m) {
 
     // LOSC wavefunctions
     py::class_<losc::LOSC, std::shared_ptr<losc::LOSC>, scf::HF>(m, "LOSC", "LOSC class")
-        .def(py::init<std::shared_ptr<Wavefunction>, std::shared_ptr<SuperFunctional>>())
+        .def(py::init<std::shared_ptr<scf::HF>>())
         .def("c1_deep_copy", &losc::LOSC::c1_deep_copy,
              "Returns a new wavefunction with internal data converted to C_1 symmetry, using pre-c1-constructed "
              "BasisSet *basis*",
