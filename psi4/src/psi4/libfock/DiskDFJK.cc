@@ -202,20 +202,64 @@ SharedVector DiskDFJK::iaia(SharedMatrix Ci, SharedMatrix Ca) {
             const std::vector<int>& pairs = eri_.front()->significant_partners_per_function()[m];
             int mrows = pairs.size();
 
+            // ym:
+            // This loop is actually over n.
+            // loop over (Q|mn), Q for auxilary basis. m, n for AO.
+            // In Qmn matrix, m >= n.
+            //
+            // The following transformation is (Q|mn) -> (Q|mi)
+            // To use dgemm, the data arrangement is (m|Qn) -> (m|Qi).
+            // Then for each m (m is fixed at each loop of m), the
+            // dgemm can be done as Qi = Qn * Cin.
+            //
+            // Why this loop is over index i?
+            // I guess mrows equals to nso.
+            //
+            //
+            // ym:
+            // Now I understand how to use dgemm to transform from AO to MO.
+            // What makes things complicate is the triangularly stored
+            // (Q|mn) in (m, n) pairs (m>=n).
+            // There is no special trick to make this transformation easy. In order to use
+            // dgemm, we have to pay the price to copy (Q|mn) (triangularly stored in m, n)
+            // to generate "full" (m|Qn) (full in m, n pairs).
             for (int i = 0; i < mrows; i++) {
                 int n = pairs[i];
                 long int ij = function_pairs_to_dense[(m >= n ? (m * (m + 1L) >> 1) + n : (n * (n + 1L) >> 1) + m)];
+                // QSp is Qn for (m|Qn).
                 C_DCOPY(rows, &Qmnp[0][ij], num_nm, &QSp[0][i], nso);
+                // Ctp is Cin. I think the copy of Cin is redundant.
+                // We can just use Clp directly.
                 C_DCOPY(nocc, Clp[n], 1, &Ctp[0][i], nso);
             }
+            // I guess following code may be equivalent. Note the change of
+            // index from `i` to `n`, and `mrows` to `nso`.
+            /*
+             for (int n = 0; n < nso; ++n) {
+                // since now n is also over nso. The nm pairs will break the condition
+                // of m >= n. Following one line of code is to restore the condition
+                // of mn pairs.
+                long int mn = ( m >= n ? (m * (m + 1) / 2 + n) : (n * (n + 1) / 2 + m));
+                // QSp is Qn for (m|Qn). Dimension is [rows x nso].
+                C_DCOPY(rows, &Qmnp[0][mn], num_nm, &QSp[0][n], nso);
+             }
+             C_DGEMM('T', 'N', nocc, rows, nso, 1.0,
+                     Clp[0], nocc,
+                     QSp[0], nso,
+                     0.0, &Elp[0][m * nocc * rows], rows);
+             */
 
             C_DGEMM('N', 'T', nocc, rows, mrows, 1.0, Ctp[0], nso, QSp[0], nso, 0.0, &Elp[0][m * (size_t)nocc * rows],
                     rows);
         }
 
         // (ai|Q)
+        // ym:
+        // The layout is actually (a|Qi), not (ai|Q).
         C_DGEMM('T', 'N', nvir, nocc * (size_t)rows, nso, 1.0, Crp[0], nvir, Elp[0], nocc * (size_t)rows, 0.0, Erp[0],
                 nocc * (size_t)rows);
+
+
 
         // (ia|Q)(Q|ia)
         for (int i = 0; i < nocc; i++) {
