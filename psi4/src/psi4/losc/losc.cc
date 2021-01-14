@@ -1,6 +1,7 @@
 #include "losc.h"
 #include "option_key.h"
 #include "localization.h"
+#include "curvature.h"
 #include "psi4/libpsi4util/exception.h"
 #include "psi4/libmints/matrix.h"
 #include "psi4/libmints/wavefunction.h"
@@ -84,6 +85,31 @@ void LOSC::common_init() {
     curvature_.assign(nspin_, nullptr);
     C_lo_.assign(nspin_, nullptr);
     local_occ_.assign(nspin_, nullptr);
+
+    // initialize LOs
+    shared_ptr<LocalizerBase> localizer = nullptr;
+    int localizer_version = options_.get_int(option_localize_version);
+    if (localizer_version == 2) {
+        localizer = std::make_shared<LocalizerV2>(dfa_wfn_);
+    } else {
+        throw PSIEXCEPTION(
+            "Sorry, currently only support localization version 2.");
+    }
+    localizer->localize();
+    C_lo_ = localizer->get_LO();
+    nlo_ = localizer->nlo();
+
+    // initialize curvature.
+    shared_ptr<CurvatureBase> curvature_helper = nullptr;
+    int curvature_version = options_.get_int(option_curvature_version);
+    if (curvature_version == 1) {
+        curvature_helper = std::make_shared<CurvatureV1>(dfa_wfn_, C_lo_);
+    } else if (curvature_version == 2) {
+        curvature_helper = std::make_shared<CurvatureV2>(dfa_wfn_, C_lo_);
+    } else {
+        throw PSIEXCEPTION("Sorry, unknown curvature version.");
+    }
+    curvature_ = curvature_helper->compute();
 }
 
 /**
@@ -96,6 +122,7 @@ LOSC::LOSC(SharedHF dfa_wfn)
     : psi::scf::HF(
           std::make_shared<Wfn>(dfa_wfn->molecule(), dfa_wfn->basisset()),
           dfa_wfn->functional(), dfa_wfn->options(), PSIO::shared_object()),
+      dfa_wfn_{dfa_wfn},
       V_{HF::Va_, HF::Vb_},
       F_{Wfn::Fa_, Wfn::Fb_},
       C_{Wfn::Ca_, Wfn::Cb_},
@@ -239,34 +266,6 @@ void LOSC::form_F() {
     }
 }
 
-/**
- * @note
- * 1. This is for frozen LO LOSC. Only build LO once.
- */
-void LOSC::build_lo() {
-    static size_t eval_num = 0;
-    // Check if the LOs are constructed or not.
-    bool do_lo = false;
-    if (eval_num = 0 || C_lo_.size() == 0) do_lo = true;
-    for (auto& lo : C_lo_) {
-        if (!lo) do_lo = true;
-    }
-    if (!do_lo) return;
-
-    int version = options_.get_int(option_localize_version);
-    std::shared_ptr<LocalizerBase> localizer = nullptr;
-    if (version == 2) {
-        localizer = std::make_shared<LocalizerV2>(reference_wavefunction_);
-    } else {
-        throw PSIEXCEPTION(
-            "Sorry, currently only support localization version 2.");
-    }
-
-    localizer->localize();
-    C_lo_ = localizer->get_LO();
-    eval_num = 1;
-}
-
 void LOSC::build_local_occupation() {
     local_occ_.clear();
     const size_t nso = basisset_->nbf();
@@ -283,7 +282,6 @@ void LOSC::build_local_occupation() {
 }
 
 void LOSC::build_V_losc() {
-    build_lo();
     build_local_occupation();
 
     const size_t nso = basisset_->nbf();
@@ -313,7 +311,23 @@ void LOSC::build_V_losc() {
 }
 
 // TODO: implement later.
-double LOSC::compute_losc_energy() { return 0; }
+double LOSC::compute_losc_energy() {
+    double energy = 0.0;
+    for (size_t is = 0; is < nspin_; ++is) {
+        const int nlo = nlo_[is];
+        for (size_t i = 0; i < nlo; ++i) {
+            const double K_ii = curvature_[is]->get(i, i);
+            const double L_ii = local_occ_[is]->get(i, i);
+            energy += 0.5 * K_ii * L_ii * (1.0 - L_ii);
+            for (size_t j = 0; j < i; ++j) {
+                const double K_ij = curvature_[is]->get(i, j);
+                const double L_ij = local_occ_[is]->get(i, j);
+                energy -= K_ij * L_ij * L_ij;
+            }
+        }
+    }
+    return energy;
+}
 
 /**
  * @note

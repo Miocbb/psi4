@@ -7,21 +7,31 @@
 namespace psi {
 namespace losc {
 
+/**
+ * Curvature base class for LOSC. The curvature is always based on a KS
+ * wavefunction and a set of LOs.
+ */
 class CurvatureBase {
    protected:
-    SharedLOSC losc_wfn_;
+    SharedHF wfn_;
+    vector<SharedMatrix> C_lo_;
+    vector<int> nlo_;
 
    public:
-    CurvatureBase(SharedLOSC losc_wfn);
+    /**
+     * Explicit constructor of curvature base class.
+     *
+     * @param wfn: a HF or derived wavefunction.
+     * @param C_lo: the localized orbitals associated with `wfn`. Its dimension
+     * is [nso, nlo].
+     */
+    CurvatureBase(SharedHF& wfn, vector<SharedMatrix>& C_lo);
     ~CurvatureBase();
 
     /**
      * Calculate the curvature matrix.
-     *
-     * @param spin[in]: the spin of the calculated curvature matrix.
-     * 0 for alpha, 1 for beta.
      */
-    virtual SharedMatrix compute(int spin) = 0;
+    virtual vector<SharedMatrix> compute() = 0;
 };
 
 /**
@@ -55,12 +65,12 @@ class CurvatureV1 : public CurvatureBase {
     /**
      * Constructor of curvature v1 object from a LOSC wavefunction.
      */
-    CurvatureV1(SharedLOSC losc_wfn);
+    CurvatureV1(SharedHF& wfn, vector<SharedMatrix>& C_lo);
     ~CurvatureV1();
     /**
      * Compute the curvature v1 for the provided spin.
      */
-    SharedMatrix compute(int spin) override;
+    vector<SharedMatrix> compute() override;
 };
 
 /**
@@ -88,12 +98,12 @@ class CurvatureV2 : public CurvatureBase {
     /**
      * Constructor of curvature v2 object from a LOSC wavefunction.
      */
-    CurvatureV2(SharedLOSC losc_wfn);
+    CurvatureV2(SharedHF& wfn, vector<SharedMatrix>& C_lo);
     ~CurvatureV2();
     /**
      * Compute the curvature v2 for the provided spin.
      */
-    SharedMatrix compute(int spin) override;
+    vector<SharedMatrix> compute() override;
 };
 
 }  // namespace losc

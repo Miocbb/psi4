@@ -12,9 +12,13 @@ namespace psi {
 namespace losc {
 using std::vector;
 
+/**
+ * LOSC localization base class. The LOSC localization is always
+ * based on a KS wavefunction.
+ */
 class LocalizerBase {
    protected:
-    SharedWavefunction wfn_;
+    SharedHF wfn_;
 
     // The unitary transformation matrix for CO to LO.
     // LO_i = CO_j Uji.
@@ -54,9 +58,10 @@ class LocalizerBase {
     // is either 1 for RKS or 2 for UKS.
 
     /**
-     * Constructor of localization base.
+     * Constructor of localization base. The wavefunction has to
+     * be a HF or KS wavefunction.
      */
-    LocalizerBase(SharedWavefunction wfn);
+    LocalizerBase(SharedHF &wfn);
     ~LocalizerBase();
 
     /**
@@ -121,7 +126,7 @@ class LocalizerV2 : public LocalizerBase {
     /**
      * Constructor of localization version 2.
      */
-    LocalizerV2(SharedWavefunction wfn);
+    LocalizerV2(SharedHF &wfn);
 
     /**
      * Deconstructor of localization version 2.

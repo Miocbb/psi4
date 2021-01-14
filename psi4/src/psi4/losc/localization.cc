@@ -16,7 +16,7 @@
 namespace psi {
 namespace losc {
 
-// ==> Localizer Base <== //
+// ==> LOSC Localizer Base <== //
 /**
  * @note
  * 1. COs in the wavefunction object is ALWAYS used as the LO basis.
@@ -43,14 +43,15 @@ void LocalizerBase::init_guess(size_t spin) {
     if (spin >= nspin_)
         throw PSIEXCEPTION("losc::LocalizerBase::guess(): invalid spin.");
 
+    // make sure to allocate memory.
+    if (!U_.at(spin))
+        U_.at(spin) = std::make_shared<Matrix>(nlo_[spin], nlo_[spin]);
     // Beta localization for UKS. Try to use alpha localization U.
     if (spin == 1 && nlo_[0] == nlo_[1]) {
         U_.at(1) = U_.at(0)->clone();
         return;
     }
-
     // use guess setting from options.
-    U_.at(spin) = std::make_shared<Matrix>(nlo_[spin], nlo_[spin]);
     Options &opt = wfn_->options();
     string guess_str = to_lower_copy(opt.get_str(option_localize_guess));
     if (guess_str == "random")
@@ -62,7 +63,7 @@ void LocalizerBase::init_guess(size_t spin) {
         throw PSIEXCEPTION("LOSC localization: invalid localization guess.");
 }
 
-LocalizerBase::LocalizerBase(SharedWavefunction wfn) : wfn_{wfn} {
+LocalizerBase::LocalizerBase(SharedHF &wfn) : wfn_{wfn} {
     // current implementation is only for c1 symmetry.
     if (wfn_->molecule()->schoenflies_symbol() != "c1")
         throw PSIEXCEPTION(
@@ -89,10 +90,15 @@ LocalizerBase::~LocalizerBase() {}
  * @note
  * 1. Dipole matrix under AO will be computed during the construction.
  */
-LocalizerV2::LocalizerV2(SharedWavefunction wfn) : LocalizerBase{wfn} {
+LocalizerV2::LocalizerV2(SharedHF &wfn) : LocalizerBase{wfn} {
     // initialize DFA Hamiltonian and dipole matrix under AO.
     H_ao_ = {wfn_->Fa(), wfn_->Fb()};
     D_ao_ = wfn_->mintshelper()->so_dipole();
+    for (auto h : H_ao_) {
+        if (!h)
+            throw PSIEXCEPTION(
+                "LOSC localization 2: wavefunction has empty Fock matrix.");
+    }
 
     // initialize localization parameters.
     auto options = wfn_->options();

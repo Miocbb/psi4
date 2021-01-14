@@ -17,6 +17,7 @@ namespace losc {
 
 class LOSC;
 class LocalizerBase;
+class CurvatureBase;
 
 using std::shared_ptr;
 using std::string;
@@ -63,8 +64,6 @@ class LOSC : public psi::scf::HF {
     SpinVector eig_;  // COs' energy. Linked to `Wfn::epsilon_a_` and
                       // `Wfn::epsilon_b_`.
 
-    // Construct LOSC localized orbitals and save it in `C_lo_`.
-    void build_lo();
     // Construct local occupation and save it in `local_occ_`.
     void build_local_occupation();
     // Construct LOSC effective potential and save it in `V_losc_`.
@@ -73,8 +72,9 @@ class LOSC : public psi::scf::HF {
     double compute_losc_energy();
 
    protected:
-    int nelec_[2];  // Total electron number.
-    size_t nspin_;  // 1 for restricted, 2 for unrestricted.
+    SharedHF dfa_wfn_;  // the parent DFA wavefunction
+    size_t nspin_;      // 1 for restricted, 2 for unrestricted.
+    int nelec_[2];      // Total electron number.
 
     // Matrix used and managed in LOSC class.
     SharedMatrix J_;                  // Coulomb matrix.
@@ -85,6 +85,7 @@ class LOSC : public psi::scf::HF {
     vector<SharedMatrix> curvature_;  // LOSC curvature matrix.
     vector<SharedMatrix> C_lo_;       // LO coefficients.
     vector<SharedMatrix> local_occ_;  // Local occupation matrix.
+    vector<int> nlo_;                 // number of LOs.
 
     void common_init();
 

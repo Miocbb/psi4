@@ -1685,6 +1685,8 @@ int read_options(const std::string &name, Options &options, bool suppress_printi
         options.add_double(losc::option_localize_v2_gamma, 0.707);
 
         /* ==> LOSC curvature options <== */
+        /*- The curvature version used in LOSC. -*/
+        options.add_int(losc::option_curvature_version, 2);
         /*- LOSC curvature_v1 parameter Cx. -*/
         options.add_double(losc::option_curvature_v1_cx, 0.9306526);
         /*- LOSC curvature_v1 parameter tau. -*/
