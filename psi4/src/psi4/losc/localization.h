@@ -1,87 +1,79 @@
 #ifndef __PSI4_LOSC_LOCALIZATION_H_
 #define __PSI4_LOSC_LOCALIZATION_H_
 
-#include <cstddef>
 #include "losc.h"
 #include "psi4/libmints/typedefs.h"
+#include <vector>
+#include <memory>
+#include <cstddef>
+#include <string>
 
 namespace psi {
 namespace losc {
+using std::vector;
+
 class LocalizerBase {
    protected:
-    SharedLOSC losc_wfn_;
+    SharedWavefunction wfn_;
+
+    // The unitary transformation matrix for CO to LO.
+    // LO_i = CO_j Uji.
+    vector<SharedMatrix> U_;
+
+    // The delocalized orbitals which are usually the LO basis.
+    // [nso, nlo]
+    vector<SharedMatrix> C_;
+
+    // LO coefficient matrix.
+    // [nso, nlo]
+    vector<SharedMatrix> L_;
+
+    // number of LOs.
+    vector<int> nlo_;
+
+    // 1 for RKS and 2 for UKS.
+    size_t nspin_;
+
+    size_t maxiter_;
+    double convergence_;
+    bool converged_;
+
     /**
-     * Maximum iteration number of Jacobi-sweep algorithm for localization.
+     * Initialize the LO basis `C_` and number of LOs `nlo_` from the input
+     * wavefunction object.
      */
-    size_t js_max_iter_;
+    void init_lo_basis();
+
     /**
-     * If use random permutation in Jacobi-sweep algorithm or not.
+     * Set the initial guess of U matrix for a spin (either alpha or beta).
      */
-    bool js_random_permutation_;
-    /**
-     * Convergence tolerance tolerance in Jacobi-sweep algorithm.
-     */
-    double js_convergence_;
-    /**
-     * @brief The unitary matrix that transfer LO basis coefficient matrix into
-     * LO coefficient matrix.
-     * @details Dimension: [nlo, nlo].
-     * The relation between the LO \f$\psi\f$ and LO basis \f$\phi\f$ via the U
-     * matrix is the following,
-     * \f[
-     * \psi_i = \sum_j U_{ij} \phi_j.
-     * \f]
-     */
-    SharedMatrix U_[2];
-    /**
-     * @brief LO basis coefficient matrix under AO.
-     * @details
-     * Dimension: [nbasis, nlo]
-     *
-     * Relation between LO basis and AO via the coefficient matrix \f$C\f$ is
-     * \f[
-     * \psi_i = \sum_\mu C_{\mu i} \phi_{\mu},
-     * \f]
-     * where \f$C\f$ matrix is stored in `C_lo_basis_`.
-     *
-     * @note Usually, the COs are used as the LOs' basis.
-     */
-    SharedMatrix C_lo_basis_[2];
-    /**
-     * Set up the initial guess of the U matrix from a given U matrix.
-     *
-     * @note
-     * The unitarity of the input U matrix is not verified.
-     */
-    SharedMatrix set_guess_u(int spin, SharedMatrix U_guess);
-    /**
-     * Set up the initial guess of the U matrix as a random unitary matrix.
-     */
-    SharedMatrix set_guess_u_random(int spin);
-    /**
-     * Set up the initial guess of the U matrix as an identity matrix.
-     */
-    SharedMatrix set_guess_u_idenity(int spin);
+    void init_guess(size_t spin);
 
    public:
+    // Note: the size of all the returned vectors of data associated with spin
+    // is either 1 for RKS or 2 for UKS.
+
     /**
      * Constructor of localization base.
      */
-    LocalizerBase(SharedLOSC losc_wfn);
+    LocalizerBase(SharedWavefunction wfn);
     ~LocalizerBase();
 
     /**
-     * Get the U matrix for the given spin.
-     */
-    SharedMatrix get_u(int spin);
-    /**
      * Calculate the localize orbitals (LOs).
-     *
-     * @param spin[in]: the spin of the calculated curvature matrix.
-     * 0 for alpha, 1 for beta.
-     * @return the LOs' coefficients on atomic basis set.
      */
-    virtual SharedMatrix compute(int spin) = 0;
+    virtual void localize() = 0;
+
+    vector<int> nlo() { return nlo_; }
+    /**
+     * Get the U matrix.
+     */
+    vector<SharedMatrix> get_U() { return U_; }
+
+    /**
+     * Get the LO coefficient matrix.
+     */
+    vector<SharedMatrix> get_LO() { return L_; }
 };
 
 /**
@@ -92,39 +84,54 @@ class LocalizerBase {
 class LocalizerV2 : public LocalizerBase {
    protected:
     /**
-     * KS Halmiltonian matrix of the DFA (NOT LOSC-DFA) on AO.
+     * KS Halmiltonian matrix under AO for the DFA (NOT LOSC-DFA).
      */
-    SharedMatrix H_ao_;
+    vector<SharedMatrix> H_ao_;
+
     /**
-     * Dipole matrix under AO in order of x, y and z directions.
+     * Dipole matrix under AO in x, y and z directions.
      */
-    SharedMatrix Dipole_ao_[3];
+    vector<SharedMatrix> D_ao_;
+
     /**
-     * Parameter \f$C\f$ in Losc2 localization cost function.
+     * Parameter C in Losc2 localization cost function.
      */
     double para_c_;
+
     /**
-     * Parameter \f$\gamma\f$ in Losc2 localization cost function.
+     * Parameter gamma in Losc2 localization cost function.
      */
     double para_gamma_;
+
+    bool js_random_permutation_;
+
+    void print_header();
+
+    void js_optimize_one_pair(const size_t i, const size_t j,
+                              const vector<SharedMatrix> &D_lo,
+                              const SharedMatrix &H_lo, double &theta_val,
+                              double &delta_val);
+    void js_rotate_one_pair(const size_t i, const size_t j, const double theta,
+                            const SharedMatrix &U,
+                            const vector<SharedMatrix> &D_lo,
+                            const SharedMatrix &H_lo);
+    void do_localization(int spin);
 
    public:
     /**
      * Constructor of localization version 2.
      */
-    LocalizerV2(SharedLOSC losc_wfn);
+    LocalizerV2(SharedWavefunction wfn);
+
     /**
      * Deconstructor of localization version 2.
      */
     ~LocalizerV2();
+
     /**
      * Calculate the localize orbitals (LOs) from localization version 2.
-     *
-     * @param spin[in]: the spin of the calculated curvature matrix.
-     * 0 for alpha, 1 for beta.
-     * @return the LOs' coefficients on atomic basis set.
      */
-    SharedMatrix compute(int spin) override;
+    void localize() override;
 };
 
 }  // namespace losc

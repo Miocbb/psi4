@@ -11,6 +11,7 @@
 #include "psi4/liboptions/liboptions.h"
 #include "psi4/libpsi4util/libpsi4util.h"
 #include "psi4/libdiis/diismanager.h"
+#include "psi4/libpsi4util/PsiOutStream.h"
 
 #include <string>
 #include <vector>
@@ -225,8 +226,6 @@ void LOSC::form_F() {
             G_[is]->print();
         }
     }
-    // TODO: add LOSC later.
-    return;
 
     // ==> Calculate LOSC-DFA Fock <==
     // Compute LOSC effective potential.
