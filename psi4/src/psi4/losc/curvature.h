@@ -16,6 +16,9 @@ class CurvatureBase {
     SharedHF wfn_;
     vector<SharedMatrix> C_lo_;
     vector<int> nlo_;
+    SharedMatrix Qmn_;  // <Q|mn> full matrix, no symmetry used.
+    SharedMatrix Vpq_;  // <P|Q>^-1 full matrix, no symmetry used.
+    vector<SharedMatrix> Qll_; // <Q|ll> with l being LOs.
 
    public:
     /**
@@ -27,6 +30,8 @@ class CurvatureBase {
      */
     CurvatureBase(SharedHF& wfn, vector<SharedMatrix>& C_lo);
     ~CurvatureBase();
+
+    void prepare_df();
 
     /**
      * Calculate the curvature matrix.
@@ -51,15 +56,16 @@ class CurvatureV1 : public CurvatureBase {
      * See Eq. (10) in the LOSC paper
      */
     double para_tau_;
+
     /**
      * Compute the Coulomb part of curvature for provided spin of electron.
      */
-    SharedMatrix compute_kappa_J(int spin);
+    vector<SharedMatrix> compute_kappa_J();
     /**
      * Compute the exchange-correlation part of curvature for provided spin of
      * electron.
      */
-    SharedMatrix compute_kappa_xc(int spin);
+    vector<SharedMatrix> compute_kappa_xc();
 
    public:
     /**
